@@ -268,8 +268,6 @@ corrplot(R)
 However, these values include possible outliers. The MCD estimates are the following:
 ```{r}
 #MCD
-#usar codigos de ejemplo de clase de topic 1
-
 # Select the number of digits in the outputs
 
 options(digits=4)
@@ -411,7 +409,7 @@ Let's start repeating the analysis for the white wines group. Their mean vector 
 ```{r}
 #Now, for the groups
 
-#blancos
+#white wines
 
 quantitativesblancos=vinosblancos[1:12]
 
@@ -567,7 +565,7 @@ We can do the same for the red wines group. First estimate their sample mean vec
 
 ```{r}
 
-#tintos
+#red wines
 
 quantitativestintos=vinostintos[1:12]
 
@@ -714,8 +712,6 @@ We can see in the PCP plot that the outlier group behaves differently than the n
 The last part of the analysis is to perform PCA on the complete dataset. Even if we just concluded that there are some outliers, the analysis is to be performed into the complete dataset. PCA shows the most important features of the dataset, including outliers, if important. Therefore, I will include them to see if we can get some additional insight. We can start by visually judging the first two PC. 
 
 ```{r}
-
-#funciona perfectamente, solo escribir analisis
 
 ####################################################################
 # Select the number of digits in the outputs
@@ -867,23 +863,4 @@ First, in order to apply the MCD procedure to obtain robust estimators for mean,
 On the other hand, taking logarithms lead to undefined values for citric acid. This problem was solved and still we got good MCD estimators. 
 
 Finally, we have used that variables are normal, which the logarithms can approximate, in order to assume that Mahalanobis distances follow a chi squared so that one can detect outliers. However, even with the logs, it seems unlikely that there is complete normality. Therefore, the outlier treatment could be improved by searching for a transformation that preserves symmetry and doesn't create this problem with citric acid, as well as checking for non normality or by using a general distribution for Mahalanobis distances that doesn't depend on normality of the variables.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
