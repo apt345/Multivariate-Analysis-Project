@@ -1,0 +1,889 @@
+---
+title: "Red and white wines characterization"
+author: "Arturo Prieto Tirado"
+date: "6/12/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE)
+```
+This project aims to study differences between red and white wines based on their characteristics. Some chemical related properties have been measured as well as their quality grading. There are a total of 12 numerical variables together with a categorical one (red or white wine). The total number of observations is 6497 distributed in 4898 white wines and 1599 red wines with no missing values. The variables that have been taken into account are the following:
+
+- Fixed acidity: Measures the grams of tartaric acid per dm$^3$. These is one of the main acids in wine production, very important in determining the final colour and flavour.
+
+- Volatile acidity: Measures the grams of acetic acid per dm$^3$, which is one of the main acids that is volatile (gas). Higher values will make the wine more acid to taste. Vinegar is made of this acid, so too much fermentation of bacteria that produce this acid lead to "vinegar-like" type of wine that everyone has experience with when smelling an old bottle that has been open and stored for too long.
+
+- Citric acid: Measures the grams of citric acid per dm$^3$. There is little natural citric acid in grapes, if not negligible. When added, it is used for chemical stabilization of the wine, but usually in small quantities, otherwise the wine will have a citric taste, which is considered a defect.
+
+- Residual sugar: Measures the grams of residual sugar per dm$^3$. This is the sugar left after the fermentation. So, a measure of the sweetness of the wine.
+
+- Chlorides: Measures the grams of sodium chloride per dm$^3$. This is related to the saltiness of the wine
+
+- Free sulfur dioxide: Measures the grams of free sulfur dioxide per dm$^3$. It is a measure of the amount of sulfur dioxide that is not bound to other molecules. Sulfur Dioxide is used to prevent oxidation and microbial growth.
+
+- Total sulfur dioxide: Measures the grams of free sulfur dioxide per dm$^3$. It basically takes into account all the sulfur dioxide, the free ones plus the ones in the molecules of the wine.
+
+- Density: Just the density in grams per dm$^3$.
+
+- pH: Measures the pH in units of pH, that is, from 0 to 14. Wines are a little acid so they have moderately low pH values.
+
+- Sulphates: Measures the grams of potassium sulfate per dm$^3$. This sulfate slows the aging of the wine and preserves its properties with time.
+
+- Alcohol: Measures the percentage of alcohol in the wine.
+
+- Quality: Measures the quality of the wine graded by experts from 0 to 10.
+
+
+## Visual analysis
+
+```{r, warning=FALSE}
+#import libraries
+library(readr)
+library(dplyr)
+library(lavaan)#covariance plot
+library(ggplot2)
+library(tictoc)
+#tic()
+
+#Import datasets
+
+
+setwd("C:/Users/arpri/OneDrive/Escritorio/libros/master/Segundo Semicuatrimestre/Análisis multivariante/")
+
+vinostintos=read_delim("winequality-red.csv", ";", escape_double = FALSE, trim_ws = TRUE)
+
+vinosblancos=read_delim("winequality-white.csv", ";", escape_double = FALSE, trim_ws = TRUE)
+
+#merge them and create categorical variable 
+
+vinostintos$type="red"
+vinosblancos$type="white"
+
+vinostotal=rbind(vinostintos, vinosblancos)
+
+
+#qualitative auxiliary variable
+
+Y=vinostotal[,13]
+
+
+#anyNA(vinostotal) #no NA
+
+#min(vinostotal$quality)
+```
+The first step is to take a look at the distribution of the variables. The categorical variable, quality, and the rest of them, shown in the following histograms. We will look as well at their quantiles, in case there is any limitation in the data.
+```{r}
+barplot(table(vinostotal$quality), xlab="quality", ylab="frequency")
+
+par(mfrow=c(3,4))
+for(names in colnames(vinostotal)[1:(length(colnames(vinostotal))-1)]){
+  hist(vinostotal[[names]], xlab=names,main="", ylab="frequency")
+}
+
+#sort(vinostotal$`citric acid`, decreasing=FALSE)
+#sort(vinostintos$`citric acid`)#hay 140 vinos con citric acid=0 de los cuales 120 son vinos tintos
+#log(0.01)
+#log(0.02)
+#log(0.03)
+#log(0.005)
+#log(0.02)
+
+summary(vinostotal[,1:12])
+
+
+#tabla con minimo y maximo
+```
+- For fixed acidity, we can see that the distribution is a bit skewed to the right and that most wines are located between around a mean value of 7.22 grams per dm3 with maximum and minimum values of 3.8 and 15.9 grams per dm3, respectively.
+
+- For volatile acidity, we can see that the distribution, similarly to the fixed acidity, is a bit skewed to the right and that most wines are located at around a mean of 0.34 grams per dm3 with maximum and minimum values of 1.58 and 0.08 grams per dm3, respectively.
+
+- For citrid acid, we can see that the distribution, similarly to the previous acidities, is a bit skewed to the right and that most wines are located at around a mean of 0.32 grams per dm3, with maximum and minimum of 1.66 and 0 grams per dm3, respectively.
+
+
+- For Residual sugar, the distribution is clearly not symmetric, and we can see that most wines have low quantities of residual sugar, with the mean being 5.44 grams per dm3, while there is a minority with high values, the maximum of the distribution is 65.8 grams per dm3 while the minimum is 0.6 grams per dm3.
+
+- For Chlorides, the distribution is clearly not symmetric, and we can see that most wines have low quantities of chlorides, with a mean value of 0.05 grams per dm3, while there is a minority with high values, the maximum of the distribution is 0.611 grams per dm3 while the minimum is 0.009 grams per dm3.
+
+
+- For Free sulfur dioxide, the distribution is clearly not symmetric, and we can see that most wines have low quantities of chlorides, concentrated between a mean of 30.52 miligrams per dm3, while there is a minority with high values, the maximum of the distribution being 289 miligrams per dm3 while the minimum, 1 miligrams per dm3.
+
+- For Total sulfur dioxide, the distribution is concentrated until 200, with mean 115.74 grams per dm3, from where there are just a few wines, being the maximum 440 and the minimum, 6 grams per dm3
+
+- For Density, most wines have a density close to 1 (mean is 0.9946966 grams per dm3) which seems logical because that is the water density. Obviously, the wine can’t weight much less than the water because it’s mainly water and the additional components will probably increase the weight. This magnitude ranges from 0.98711 to 1.03898 grams per dm3
+
+- For pH, the distribution of pH is more or less symmetric around a mean of 3.22, a bit skewed to the left, with minimum 2.72 and maximum 4.01.
+
+- For Sulphates, the distribution is clearly right skewed around a mean of 0.53 grams per dm3 with minimum value 0.22 and maximum value 2 grams per dm3.
+
+- For	Alcohol, the distribution of alcohol % is right skewed around a mean value of 10.49 ranging from 8 to 14.9.
+
+- Finally, for quality, the distribution ranges from 3 to 9, with a mean of 5.81. It is curious that there are no maximum grades out of 6000 wines.
+
+
+We can see that most of them are very skewed, so we will take logarithms (which will be useful later). However, since the citric acid has values of zero, this supposes a problem because log(0) is not defined. The other variables don't have this problem because they don't get to 0. One could think on treating them like NAs but this could lead to any value, and we know the log we should get must be smaller than any of the others, just not minus infinity or a very big number (in absolute value), as well as the same value for all of them. These observations had all of them a value of 0, so we should replace all of them with the same value. So, I will add up a very small quantity to remediate this problem. However, this could introduce a bias and lead to very big (negative) values of the log of citric acid. Therefore, we should take this increment with care not to modify very much the original values but not creating absurdly large values as well. There are around 140 wines with citric acid 0 from which around 120 are red wines, so doing the wrong thing could create artificial outliers and bias towards red wines in the importance of citric acid as a key feature of red wines. Looking at the values of the citric acid, they are given with two significant decimals, this means that the measurement error of the values is of order $\pm$ 0.01 (otherwise the precision would be different). Therefore, a change of 0.005 should be inside the margin of error and seam reasonable, since log(0.02)=-3.9 , log(0.01)=-4.6 and log(0.005)=-5.3. Still, seeing if outliers have been created should be checked as well since it could happen that they were outliers from the beginning. 
+
+The distribution of the logarithms of the variables is shown in the following histograms. The log for quality was not taken since it was already symmetric and, having discrete values, it would have worsened the distribution.
+
+
+```{r, echo=FALSE}
+#change to logarithms for the future
+i=1
+
+#citric acid gives some problems log(0)= inf
+
+
+vinostotal[vinostotal$'citric acid'==0, "citric acid"]=vinostotal[vinostotal$'citric acid'==0, "citric acid"]+0.005
+
+vinosblancos[vinosblancos$'citric acid'==0, "citric acid"]=vinosblancos[vinosblancos$'citric acid'==0, "citric acid"]+0.005
+
+vinostintos[vinostintos$'citric acid'==0, "citric acid"]=vinostintos[vinostintos$'citric acid'==0, "citric acid"]+0.005
+
+#probably, this would create some outlier in citrid acid, it won't be infinity, but anyway a very big number
+
+```
+
+```{r}
+
+#might be useful to take logarithms
+par(mfrow=c(3,4))
+for(names in colnames(vinostotal)[1:(length(colnames(vinostotal))-2)]){
+  hist(log(vinostotal[[names]]), xlab=paste("log(",names, ")"),main="", ylab="frequency")
+}
+
+
+```
+```{r}
+for(names in colnames(vinostotal)[1:(length(colnames(vinostotal))-2)]){
+  vinostotal[[names]]=log(vinostotal[[names]])
+  names(vinostotal)[i]=paste("log(",names, ")")
+  vinosblancos[[names]]=log(vinosblancos[[names]])
+  names(vinosblancos)[i]=paste("log(",names, ")")
+  vinostintos[[names]]=log(vinostintos[[names]])
+  names(vinostintos)[i]=paste("log(",names, ")")
+  i=i+1
+}
+
+n=nrow(vinostotal)
+p=12
+
+```
+Finally, it would be interesting to see the distribution of the previous variables but regarding the different group they belong to, red or wine, as well as the scatterplot matrix to identify correlations between variables inside the whole dataset or inside a particular group. This is shown in the following kernel densities plots and in the scatterplot.
+
+```{r}
+plot_list=list()
+
+i=1
+
+aes_string2 <- function(...){
+  args <- lapply(list(...), function(x) sprintf("`%s`", x))
+  do.call(aes_string, args)
+}
+
+for(names in colnames(vinostotal)[1:12]){
+  plot_list[[i]]=vinostotal %>% ggplot(aes_string2(x = names)) +  geom_density(aes(group = type, colour = type, fill = type), alpha = 0.2)
+  i=i+1
+}
+
+library(gridExtra)
+
+
+grid.arrange(grobs=plot_list,ncol=3)
+
+rm(plot_list)#los borro porque ocupan mucha memoria
+
+
+```
+
+We can see that red wines have more acidity, but similar citric acid than white wines (except for a tail towards low values). In terms of sugar, red wines have low sugar while white ones are distributed with low and high values of sugar. Shapes for chlorides, pH and sulphates are very similar but shifted to higher values for red wines. In terms of sulfur dioxide (free and total), white wines have more than red wines. Alcohol is distributed more or less in a similar way between both groups and as well as density, but with higher mean density for red wines. Finally and surprisingly or not, there is no difference in quality between red and white wines. We can see that all the distributions overlap, so it won't be immediate to determine the group just based on one variable even though there are some like chlorides that do have very little overlapping and could serve as distinctive traits between the groups.
+
+```{r, out.width="1000px", out.height="1000px"}
+#Show scatterplot matrix
+color_2 <- "darkred"
+color_3 <- "darkolivegreen1"
+colors_X <- c(color_2,color_3)[1*(Y=="red")+1]#si es tinto es color 2(rojo)
+pairs(vinostotal[,1:12], pch=12, col=colors_X)
+
+
+#we can see some outliers
+
+#could try with Andrew's plot or parallel coordinate plot, but probably won't see anything. Anyway, it's a good way of motivating reduction techniques like PCA
+```
+
+We don't see any particular obvious relation between the variables, apart from the ones that share a chemical compound like the sulfur variables, that were expected to have some correlation, or pH and fixed acidity, that are related since pH is a measure of acidity. We can see some outliers, though, looking at high density values. One could try with Andrew's plot or parallel coordinate plot. As can be seen in the following plots, it is clear that red and white wines follow different trends. It is also possible to see the presence of some outliers, since some of the lines (easier to see in the red wines) go outside the main curve. This is harder to see in the Andrew's plot, where there is not a clear picture. We can see that this is a great motivation towards dimension reduction techniques like Principal Component Analysis, that we'll work at later.
+
+```{r}
+library("MASS")
+
+parcoord(vinostotal[,1:12],col=colors_X,var.label=TRUE,main="PCP for red and white wines")
+library("andrews")
+#need to create new variable because andrews plot doesnt like the factor having strings and not numbers...
+newvariable=vinostotal$type
+newvariable[newvariable=="red"]=0
+newvariable[newvariable=="white"]=1
+par(mfrow=c(1,1))
+andrews(cbind(vinostotal[,1:12],factor(newvariable)),clr=13,ymax=6,main="Andrews' Plot red and white wines")
+
+```
+
+## Covariance, mean and correlations for the complete dataset
+
+The next step is to estimate the covariance, mean and correlations for the complete dataset.
+
+First, based on the results of the visual analysis, one should search for outliers, missing values or use sample shrinkage, etc. In our case, there are no missing values. Furthermore, there are only 12 variables and 6500 observations. The covariance matrix has order p(p-1)/2 so around 70 parameters. There are more than enough observations to estimate those parameters. In the same sense, both groups have enough observations individually 1600 and 4900 to calculate the individual covariance matrices. Therefore, there is no need to use the shrinkage covariance matrix as estimator of the true covariance matrix, since the sample one will not be singular.
+
+So, we are left to check if there are outliers. Since computing the Mahalanobis distance requires estimates for mean and covariance, which are calculated using the outliers, one estimates these parameters with almost sure non-outliers (if this value is small, it might be useful to use the shrinkage covariance matrix here instead of the sample one: "minimum regularized
+covariance determinant estimators" MRCD) and with that Mahalanobis distance, judges which ones are outliers or not. Repeat this process a couple of times and find the estimation with the most non-outliers. These are the minimum covariance determinant estimators (MCD). In order to find the starting almost sure non-outliers one analyzes the variability they explain, i.e. the determinant, because the sum of the variances equals the sum of the eigenvalues and the determinant is the product of eigenvalues.
+
+On the other hand, it is important to work with symmetric datasets. Since we have taken logs, this holds more or less, but we should still pay attention. Finally, not all of the variables have the same units of measurement so we will use normalized principal component analysis to avoid the effect of the units of measurement, otherwise, it will be impossible to compare numerical values like variances, for example.
+
+Having said this, the mean vector for the complete dataset is the following:
+```{r, echo=FALSE}
+#now the goal is to estimate the mean vector, covariance and correlation matrix of the quantitative variables in the data set. If there are groups, as it's the case with the type of wine, also do it for them.
+
+
+#first all quantitatives not taking groups 
+
+quantitativestotal=vinostotal[1:12]
+
+m=colMeans(quantitativestotal)
+
+m
+```
+
+Which are simply the logarithms of the values comented in the analysis of the variables section. The covariance and correlation were also estimated, with results summarized for simplicity in the following correlation plot.
+
+```{r}
+S=cov(quantitativestotal)
+
+#S
+
+R=cor(quantitativestotal)
+library(corrplot)
+corrplot(R)
+
+#R
+```
+
+However, these values include possible outliers. The MCD estimates are the following:
+```{r}
+#MCD
+#usar codigos de ejemplo de clase de topic 1
+
+# Select the number of digits in the outputs
+
+options(digits=4)
+
+##################################################################################################################
+# Define colors for plot
+
+color_1 <- "deepskyblue2"
+color_2 <- "seagreen2"
+color_3 <- "orange2"
+
+# Obtain the robust mean vector, covariance matrix and correlation matrix of the data set
+
+library(rrcov)
+MCD_est <- CovMcd(quantitativestotal,alpha=0.75,nsamp="deterministic")
+m_MCD <- MCD_est$center
+m_MCD
+
+```
+
+We can see that the mean values have changed, increasing in residual sugar, free and total sulfur dioxide and quality and decreasing in the rest of the cases due to the effect of outliers. Therefore, the outliers had lower values of sugar, sulfurs and quality and higher in the rest, just the opposite trend. The new robust correlations are shown in the following plot:
+
+```{r}
+S_MCD <- MCD_est$cov
+
+#S_MCD
+R_MCD <- cov2cor(S_MCD)
+corrplot(R_MCD)
+#R_MCD
+```
+
+
+We can compare the correlation matrices for the robust estimators (MCD) and the sample ones and see the effect that outliers have in the correlation.
+
+```{r}
+##################################################################################################################
+# Compare both correlation matrices
+
+library(corrplot)
+par(mfrow=c(1,2))
+corrplot(R, main="Regular corrplot", mar=c(0,0,1,0))
+corrplot(R_MCD, main="MCD corrplot", mar=c(0,0,1,0))
+
+##################################################################################################################
+
+```
+
+We can see that the outliers affect the correlation by diminishing existing correlations and creating or enhancing non-existent ones. For example, between acidities and sulfurs there seems to be some correlation that turned out to be caused by outliers. On the other hand, alcohol correlations to other variables like density or chlorides were hidden by outliers, although not in a great way.
+
+Then, We can compare the eigenvalues of both covariance matrices and see how outliers affect them.
+
+```{r}
+##################################################################################################################
+# Compare eigenvalues of both covariance matrices for the complete dataset
+
+eval_S <- eigen(S)$values
+eval_S_MCD <- eigen(S_MCD)$values
+
+min_y <- min(cbind(eval_S,eval_S_MCD)) - 1
+max_y <- max(cbind(eval_S,eval_S_MCD)) + 1
+
+plot(1:12,eval_S,col=color_1,type="b",xlab="Number",ylab="Eigenvalues",pch=19,ylim=c(min_y,max_y),main="Comparison of eigenvalues")
+points(1:12,eval_S_MCD,col=color_2,type="b",pch=19)
+legend(6,2,legend=c("Eigenvalues of S","Eigenvalues of S MCD"),col=c(color_1,color_2),lty=1,cex=1.2)
+
+##################################################################################################################
+
+```
+
+We can see that the eigenvalues of the robust covariance matrix are smaller. These eigenvalues are linked with the Principal Components of PCA, which extract the key features/groups in the dataset, mostly in the first PC. Clearly, outliers create variability and/or enhance groups artificially, so they affect greatly the first eigenvalues. If the first eigenvalue was linked to a type of group that was enhanced by the outliers, because they add variability, now its importance is reduced.
+
+
+The next question that could be asked is how many outliers there are. This is shown in the following plot. From now on the outliers will be shown as orange points, while non-outliers, as green.
+
+```{r}
+##################################################################################################################
+# Show the squared Mahalanobis distances with the final set of non-outliers
+
+X_sq_Mah_MCD <- MCD_est$mah
+col_outliers_Mah_MCD <- rep(color_2,n)
+outliers_Mah_MCD <- which(X_sq_Mah_MCD>qchisq(.99,p))#Mahalanobis distance sigue una chi cuadrado si la variable sigue una normal. Puesto que hemos tomado logaritmos, la asuncion de normalidad puede funcionar. log(quality)? no, es hasta menos normal
+
+
+#outliers_Mah_MCD
+print(paste("the number of outliers in the complete dataset is: ", length(outliers_Mah_MCD)))
+
+col_outliers_Mah_MCD[outliers_Mah_MCD] <- color_3
+par(mfrow=c(1,2))
+plot(1:n,X_sq_Mah_MCD,pch=19,col=col_outliers_Mah_MCD,main="Squared Mahalanobis distances",xlab="Observation",ylab="Squared Mahalanobis distance")
+abline(h=qchisq(.99,p),lwd=3,col=color_1)
+plot(1:n,log(X_sq_Mah_MCD),pch=19,col=col_outliers_Mah_MCD,main="Log of squared Mahalanobis distances",xlab="Observation",ylab="Log of squared Mahalanobis distance")
+abline(h=log(qchisq(.99,p)),lwd=3,col=color_1)
+
+##################################################################################################################
+
+```
+
+Looking at the log of square Mahalanobis distance (and the length of the vector), we see that there are 1000 outliers, which is around 15% of the dataset, but the important thing is that we get robust estimators of the mean, covariance and correlations.
+
+We can see the different behaviour between outliers and non-outliers in the following plots:
+
+```{r, out.width="1000px", out.height="1000px"}
+# Show the outliers
+
+pairs(quantitativestotal,pch=19,col=col_outliers_Mah_MCD)
+```
+
+Most of the variables make no distinction between outliers, but citric acid clearly shows separation between them. In fact, it's lower values of citric acid that are outliers. However, since the number of outliers (around 1000) is higher than the number of citric acid that gave problems (around 100), it seems unlikely that we had created artificial outliers, just that these were already outlier points.
+
+```{r}
+library(MASS)
+parcoord(quantitativestotal,col=col_outliers_Mah_MCD,var.type=TRUE,main="PCP for wines")
+
+
+##################################################################################################################
+
+```
+
+We can see in the PCP plot and in the Andrew's plot that the outlier group clearly behaves differently than the non-outlier group.
+
+```{r}
+# Andrews plots for the quantitative variables in the complete set of wines
+#ctrl is the variable for making groups. In this case, we are merging quantitatives total with the factor regarding the category of being outlier or not (out_X). Since quantitatives total has 12 columns, the category is on the 13th
+library(andrews)
+out_X <- rep(1,n)
+out_X[outliers_Mah_MCD] <- 2
+andrews(as.data.frame(cbind(quantitativestotal,as.factor(out_X))),clr=13,ymax=4,main="Andrews' Plot for wines")
+```
+
+
+
+Now, we could repeat this analysis for each of the two groups, red wines and white wines. This way, we can compare the estimates of the mean, covariance and correlation to see if they change between the groups and also analyze the number of outliers, because it could happen that we had a great number of outliers because we had been mixing two different groups .
+
+
+## Covariance, mean and correlation for red and white wines population
+
+Let's start repeating the analysis for the white wines group. Their mean vector is the following:
+
+```{r}
+#Now, for the groups
+
+#blancos
+
+quantitativesblancos=vinosblancos[1:12]
+
+blancosmean=colMeans(quantitativesblancos)
+
+blancosmean
+```
+
+And their correlation plot:
+
+```{r}
+blancoscov=cov(quantitativesblancos)
+
+blancoscor=cor(quantitativesblancos)
+
+corrplot(blancoscor)
+
+n=nrow(vinosblancos)
+
+
+
+
+```
+
+Now, we perform the MCD estimation, with the following robust mean vector resulting:
+
+
+```{r}
+#MCD for red wines
+#usar codigos de ejemplo de clase de topic 1
+
+
+# Select the number of digits in the outputs
+
+options(digits=4)
+
+##################################################################################################################
+# Define colors for plot
+
+color_1 <- "deepskyblue2"
+color_2 <- "seagreen2"
+color_3 <- "orange2"
+color_4 <- "darkorchid4"
+
+# Obtain the robust mean vector, covariance matrix and correlation matrix of the data set
+
+library(rrcov)
+MCD_est <- CovMcd(quantitativesblancos,alpha=0.75,nsamp="deterministic")
+m_MCD <- MCD_est$center
+m_MCD
+
+```
+
+It is seen that some variables have increments when we remove the outliers, this is the case for fixed acidity, volatile acidity, chlorides, density, pH and sulphates. This tells us that the mean value for outliers is smaller than for non outliers for these variables, and higher in the others, but just by order 1-2% at most.
+
+In the same sense, the robust correlation is shown in the following plot:
+
+```{r}
+#m_MCD
+S_MCD <- MCD_est$cov
+
+
+#S_MCD
+R_MCD <- cov2cor(S_MCD)
+
+corrplot(R_MCD)
+#R_MCD
+```
+
+Finally, we can compare the correlation matrices for the robust estimators (MCD) and the normal ones and see the effect that outliers have in the correlation.
+
+```{r}
+##################################################################################################################
+# Compare both correlation matrices
+
+library(corrplot)
+par(mfrow=c(1,2))
+corrplot(blancoscor, main="Regular corrplot white wines", mar=c(0,0,1,0))
+corrplot(R_MCD, main="MCD corrplot white wines", mar=c(0,0,1,0))
+
+##################################################################################################################
+
+```
+
+We can see that the outliers affect the correlation by diminishing existing correlations and creating or enhancing non-existent ones, but the general pattern stays the same.
+
+Analogously as in the complete set case, we can compare the eigenvalues. However, in this case, the first eigenvalue is higher for the MCD case in contrast with the case with the complete dataset, where it was smaller. As we will see later, the first eigenvalue is related to the first principal component, which accounts for separation between red and white wines. Since now we are only dealing with white wines and since the eigenvalues describe characteristics of the variance that are "orthogonal", it would be reasonable to think that the second general eigenvalue coincided more or less with the first eigenvalue in the white (and red) individual cases and therefore following more or less the same trend
+
+```{r}
+##################################################################################################################
+# Compare eigenvalues of both covariance matrices for the red wines dataset
+
+eval_S <- eigen(blancoscov)$values
+eval_S_MCD <- eigen(S_MCD)$values
+
+min_y <- min(cbind(eval_S,eval_S_MCD)) - 1
+max_y <- max(cbind(eval_S,eval_S_MCD)) + 1
+
+plot(1:12,eval_S,col=color_1,type="b",xlab="Number",ylab="Eigenvalues",pch=19,ylim=c(min_y,max_y),main="Comparison of eigenvalues white wines")
+points(1:12,eval_S_MCD,col=color_2,type="b",pch=19)
+legend(6,2,legend=c("Eigenvalues of S","Eigenvalues of S MCD"),col=c(color_1,color_2),lty=1,cex=1.2)
+
+##################################################################################################################
+
+```
+
+
+Finally, let's see how many outliers are in the white wine group.
+
+```{r}
+##################################################################################################################
+# Show the squared Mahalanobis distances with the final set of non-outliers
+
+X_sq_Mah_MCD <- MCD_est$mah
+col_outliers_Mah_MCD <- rep(color_2,n)
+outliers_Mah_MCD <- which(X_sq_Mah_MCD>qchisq(.99,p))#Mahalanobis distance sigue una chi cuadrado si la variable sigue una normal. Puesto que hemos tomado logaritmos, la asuncion de normalidad puede funcionar. log(quality)? no, es hasta menos normal
+
+
+#outliers_Mah_MCD
+print(paste("the number of outliers in the white wines group is: ", length(outliers_Mah_MCD)))
+col_outliers_Mah_MCD[outliers_Mah_MCD] <- color_3
+par(mfrow=c(1,2))
+plot(1:n,X_sq_Mah_MCD,pch=19,col=col_outliers_Mah_MCD,main="Squared Mahalanobis distances",xlab="Observation",ylab="Squared Mahalanobis distance")
+abline(h=qchisq(.99,p),lwd=3,col=color_1)
+plot(1:n,log(X_sq_Mah_MCD),pch=19,col=col_outliers_Mah_MCD,main="Log of squared Mahalanobis distances",xlab="Observation",ylab="Log of squared Mahalanobis distance")
+abline(h=log(qchisq(.99,p)),lwd=3,col=color_1)
+
+##################################################################################################################
+
+```
+
+Looking at the log of square Mahalanobis distance (and the length of the vector), we see that there are 426 potential outliers in the white wines group, which represents a 25%, which could seem a lot but has given us a robust estimator.
+
+The distribution of the outliers is the following:
+
+```{r, out.width="1000px", out.height="1000px"}
+# Show the outliers
+
+pairs(quantitativesblancos,pch=19,col=col_outliers_Mah_MCD)
+```
+
+We can again see that citric acid is involved in outlier creation and finally, in the PCP plot, see as well that their behaviour is different.
+
+```{r}
+library(MASS)
+parcoord(quantitativesblancos,col=col_outliers_Mah_MCD,var.type=TRUE,main="PCP for white wines")
+
+##################################################################################################################
+
+```
+
+We can do the same for the red wines group. First estimate their sample mean vector and correlation:
+
+```{r}
+
+#tintos
+
+quantitativestintos=vinostintos[1:12]
+
+tintosmean=colMeans(quantitativestintos)
+
+tintosmean
+
+```
+
+And correlation plot: 
+
+```{r}
+
+tintoscov=cov(quantitativestintos)
+
+tintoscor=cov2cor(tintoscov)
+
+corrplot(tintoscor)
+```
+
+
+Now, we can compare with the MCD estimation:
+```{r}
+#MCD
+
+n=nrow(vinostintos)
+# Select the number of digits in the outputs
+
+options(digits=4)
+
+##################################################################################################################
+# Define colors for plot
+
+color_1 <- "deepskyblue2"
+color_2 <- "seagreen2"
+color_3 <- "orange2"
+
+# Obtain the robust mean vector, covariance matrix and correlation matrix of the data set
+
+library(rrcov)
+MCD_est <- CovMcd(quantitativestintos,alpha=0.75,nsamp="deterministic")
+m_MCD <- MCD_est$center
+m_MCD
+```
+
+We can see some changes in the robust mean vector, increasing very slightly fixed acidity, free sulphur dioxide and quality and decreasing the other variables, telling us that the values of the outliers are the opposite, lower for those three and greater for the others but, still, with little difference.
+
+
+```{r}
+S_MCD <- MCD_est$cov
+
+
+#S_MCD
+R_MCD <- cov2cor(S_MCD)
+corrplot(R_MCD)
+#R_MCD
+```
+
+We can compare the correlation matrices for the robust estimators (MCD) and the sample ones and see the effect that outliers have in the correlation.
+
+```{r}
+##################################################################################################################
+# Compare both correlation matrices
+
+library(corrplot)
+par(mfrow=c(1,2))
+corrplot(tintoscor, main="Regular corrplot red wines", mar=c(0,0,1,0))
+corrplot(R_MCD, main="MCD corrplot", mar=c(0,0,1,0))
+
+##################################################################################################################
+
+```
+
+It is possible to see slight increases/decreases by removing the outliers, but, in general, there are no significant changes.
+
+We can again compute the eigenvalues for sample and robust covariance and see the same effect we discussed in the white wine case in an identical way.
+
+```{r}
+##################################################################################################################
+# Compare eigenvalues of both covariance matrices for the complete dataset
+
+eval_S <- eigen(tintoscov)$values
+eval_S_MCD <- eigen(S_MCD)$values
+
+min_y <- min(cbind(eval_S,eval_S_MCD)) - 1
+max_y <- max(cbind(eval_S,eval_S_MCD)) + 1
+
+plot(1:12,eval_S,col=color_1,type="b",xlab="Number",ylab="Eigenvalues",pch=19,ylim=c(min_y,max_y),main="Comparison of eigenvalues red wines")
+points(1:12,eval_S_MCD,col=color_2,type="b",pch=19)
+legend(6,2,legend=c("Eigenvalues of S","Eigenvalues of S MCD"),col=c(color_1,color_2),lty=1,cex=1.2)
+
+##################################################################################################################
+
+```
+
+Finally, the following plot shows how many outliers there are in the red wine dataset
+
+```{r}
+##################################################################################################################
+# Show the squared Mahalanobis distances with the final set of non-outliers
+
+X_sq_Mah_MCD <- MCD_est$mah
+col_outliers_Mah_MCD <- rep(color_2,n)
+outliers_Mah_MCD <- which(X_sq_Mah_MCD>qchisq(.99,p))#Mahalanobis distance sigue una chi cuadrado si la variable sigue una normal. Puesto que hemos tomado logaritmos, la asuncion de normalidad puede funcionar. log(quality)? no, es hasta menos normal
+
+
+#outliers_Mah_MCD
+print(paste("the number of outliers in the red wines group is: ", length(outliers_Mah_MCD)))
+
+col_outliers_Mah_MCD[outliers_Mah_MCD] <- color_3
+par(mfrow=c(1,2))
+plot(1:n,X_sq_Mah_MCD,pch=19,col=col_outliers_Mah_MCD,main="Squared Mahalanobis distances",xlab="Observation",ylab="Squared Mahalanobis distance")
+abline(h=qchisq(.99,p),lwd=3,col=color_1)
+plot(1:n,log(X_sq_Mah_MCD),pch=19,col=col_outliers_Mah_MCD,main="Log of squared Mahalanobis distances",xlab="Observation",ylab="Log of squared Mahalanobis distance")
+abline(h=log(qchisq(.99,p)),lwd=3,col=color_1)
+
+##################################################################################################################
+
+```
+
+Looking at the log of square Mahalanobis distance (and the length of the vector), we see that there are 227 outliers. We can see that the total number of red+white outliers=426+227=653 is smaller than the number of outliers we got from the total dataset (1000), which means we might have overestimated the outliers due to the effect of the groups.
+
+In the following plot, we can see the scatterplot matrix dividing in groups of outliers and non-outliers for the red wine subset. We can again see that residual sugar has great importance in outliers.
+
+```{r, out.width="1000px", out.height="1000px"}
+# Show the outliers
+
+pairs(quantitativestintos,pch=19,col=col_outliers_Mah_MCD)
+```
+
+```{r}
+library(MASS)
+parcoord(quantitativestintos,col=col_outliers_Mah_MCD,var.type=TRUE,main="PCP for red wines")
+
+##################################################################################################################
+
+```
+
+We can see in the PCP plot that the outlier group behaves differently than the non-outlier group.
+
+
+## Principal Component Analysis
+
+The last part of the analysis is to perform PCA on the complete dataset. Even if we just concluded that there are some outliers, the analysis is to be performed into the complete dataset. PCA shows the most important features of the dataset, including outliers, if important. Therefore, I will include them to see if we can get some additional insight. We can start by visually judging the first two PC. 
+
+```{r}
+
+#funciona perfectamente, solo escribir analisis
+
+####################################################################
+# Select the number of digits in the outputs
+
+options(digits=4)
+
+##################################################################################################################
+# Define colors for plots
+
+
+color_2 <- "darkred"
+color_3 <- "darkolivegreen1"
+colors_X <- c(color_2,color_3)[1*(Y=="red")+1]#si es tinto es color 2(rojo)
+
+
+##################################################################################################################
+
+
+
+X_pcs <- prcomp(quantitativestotal,scale=TRUE)
+
+##################################################################################################################
+# PC scores
+
+#dim(X_pcs$x)
+#head(X_pcs$x)
+
+##################################################################################################################
+# Make a plot of the first two PCs
+
+colors_X <- c(color_2,color_3)[1*(Y=="red")+1]#si es tinto es color 2(rojo)
+par(mfrow=c(1,1))
+plot(X_pcs$x[,1:2],pch=19,col=colors_X)
+```
+
+It is clearly seen that the first two PCs show the presence of the two different groups, splitted in half with an almost vertical line. This coincides with the two categories of wine: red and white, as the colors show for the same color of the wine. The presence of outliers is also evident, being easy to identify them as well.
+
+```{r}
+
+##################################################################################################################
+# The eigenvalues of the sample correlation matrix of X_trans, i.e., the variances of the PCs are the square of sdev
+
+#X_pcs$sdev^2
+
+##################################################################################################################
+# Have a look at these eigenvalues
+
+# Screeplot
+color_4 <- "darkorchid4"
+library(factoextra)
+fviz_eig(X_pcs,ncp=17,addtypes=T,barfill=color_1,barcolor=color_4)
+
+##################################################################################################################
+
+```
+
+The next question we could ask ourselves is how many PCs are important. The previous plot shows the percentage of explained variance for each PC. One can see that the first two ones only account for roughly half the variance. However, as can be seen in the correlation plot between the four first PC, it is enough to unveil the distinction between the groups only with PC1 and PC2. So, in the end, the dimensionality of the problem is reduced to 4 or even 2 useful PCs that are enough to explain a great deal of the variance and distinguish between the groups.
+
+```{r}
+# How many PCs are important?
+# Plot the scores (the four PCs)
+
+pairs(X_pcs$x[,1:4],col=colors_X,pch=19,main="The first four PCs")
+
+
+```
+
+As we have just seen, principal components reduce the dimensionality of the problem. However, these original variables have some physical meaning, but how can one give an interpretation to the principal components? In order to do that one can see the different weights onto the two first principal components, that is, the variables that contribute the most to these PCs.
+```{r}
+# Interpretation of the first PC: Weights for the first PC
+
+plot(1:p,X_pcs$rotation[,1],pch=19,col=color_1,main="Weights for the first PC",
+     xlab="Variables",ylab="Score", ylim=c(-0.5,0.5))
+abline(h=0)
+text(1:p,X_pcs$rotation[,1],colnames(quantitativestotal),pos=1,col=color_4,cex=0.75)
+
+##################################################################################################################
+```
+
+We can see that the first principal component is determined mostly by the different quantities of sulfur dioxide as well as chlorides and volatile acidity. If we look back at the kernel densities plot, we can see that these two types of wine followed distributions with little overlap, therefore it makes sense that they contribute to PC1 that is the one that separates the group.
+
+```{r}
+# Interpretation of the second PC: Weights for the second PC
+
+plot(1:p,X_pcs$rotation[,2],pch=19,col=color_1,main="Weights for the second PC",
+     xlab="Variables",ylab="Score", ylim=c(-0.6,0.5))
+abline(h=0)
+text(1:p,X_pcs$rotation[,2],colnames(quantitativestotal),pos=1,col=color_4,cex=0.75)
+```
+
+The contributions to the second principal component are mainly alcohol percentage, density and residual sugar. However, there does not seem to be an obvious group that we can create in base of this PC but we can give an interpretation to it using some general knowledge of wines. The residual sugar is the sugar that is left in the wine after the fermentation. Sugar is a key ingredient for fermentation so, in order to avoid that the wine keeps fermenting afterwards, sweet wines need a higher concentration of alcohol and acidity and sometimes need treatment with sulfur compounds. So, this PC could be related with the sweetness/strength of the wine. But the weights don't give us the direction of the PC. We don't know whether high values of this second PC relates to sweet wines or strong wines. The following plots help us to identify more clearly the variables that really generate extremes (groups) at each PC as well as the direction of the arrow for each variable on the PC.
+
+```{r}
+##################################################################################################################
+# Have a look at the important variables in the first two PCs
+# Note the different groups in the data
+# The radius is arbitrary
+
+plot(X_pcs$rotation[,1:2],pch=19,col=color_1,main="Weights for the first two PCs", ylim=c(-0.6,0.6), xlim=c(-0.6,0.6))
+abline(h=0,v=0)
+text(X_pcs$rotation[,1:2],colnames(quantitativestotal),pos=1,col=color_4,cex=0.75)
+library(plotrix)
+draw.circle(0,0,0.3,border=color_4,lwd=3)
+```
+
+This plot shows the contributions of each variable to both PC at the same time. Points outside the circle indicate that that variable contributes greatly to both PCs, therefore being a candidate for group separation. We can see that density, acidity, chlorides and sulfur variables are the ones contributing the most. Other variables, such as the pH, citric acid, or even the quality, which a priori could seem very important, don't make such a difference.
+
+```{r}
+##################################################################################################################
+# The biplot is an alternative way to plot points and the first two PCs together 
+# However, it is only useful when the data set is not too large
+
+biplot(X_pcs,col=c(color_1,color_4),cex=c(0.5,0.8))
+```
+
+This last plot shows the direction of the arrow. We know that PC1 characterizes red or white wines. For increasing sulfur dioxide and citric acid, PC1 increases, which means we would have a red wine. For decreasing PC1, the most important variables are the acidity, chlorides and sulphates. So, high values of these magnitudes are associated with white wines. PC2 relates to the sweetness and strength of the wine. For low values of PC2 we would have an alcoholic non-sweet wine, and better, in general, because quality aims in that direction. This makes sense because if a wine it's too acid, it won't be good. We can check that the pH also points in the same direction, also supporting the non-acid hypothesis. On the other hand, for high values of PC2, a light sweet wine.
+
+Finally, plotting the correlations between the original data set and the scores of the PC is useful to understand also which are the important variables in the data set in terms of variability.
+
+```{r}
+
+##################################################################################################################
+# Plot the correlations between the original data set and the scores
+# This is useful to understand also which are the important variables in the data set in terms of variability
+# First, plot all the PCs
+# Second, plot only the first four PCs
+
+library(corrplot)
+corrplot(cor(quantitativestotal,X_pcs$x),is.corr=T)
+#corrplot(cor(quantitativestotal,X_pcs$x[,1:4]),is.corr=T)
+#toc()
+```
+
+
+
+We can see that quality, pH and sulphates are not really important, while the rest do explain higher amounts of variance.
+
+
+## Discussion and Conclusions
+
+In conclusion, this study has analyzed main traits of wine, determining the mean values of the variables and the relation between them in a robust manner as well as determining the fundamental differences between red and white wines. This has been enhanced by performing Principal Component Analysis, showing that sulfur dioxide and citric acid are related with red wines while acidity, chlorides and sulfur, with white wines.
+
+Furthermore, PCA has shown to be very effective in reducing the dimension of the problem, being able to differentiate between red and white wines just from the first principal component and between strong taste wines from the second principal component, just two dimensions, as well as providing insight on the related variables, as stated before.
+
+However, there are some things that might be taken into account.
+
+First, in order to apply the MCD procedure to obtain robust estimators for mean, covariance and correlation, it is necessary to work with symmetric datasets. This is a limitation of the study that was attempted to be corrected by taken logarithms, but certainly there was no perfect symmetry.
+
+On the other hand, taking logarithms lead to undefined values for citric acid. This problem was solved and still we got good MCD estimators. 
+
+Finally, we have used that variables are normal, which the logarithms can approximate, in order to assume that Mahalanobis distances follow a chi squared so that one can detect outliers. However, even with the logs, it seems unlikely that there is complete normality. Therefore, the outlier treatment could be improved by searching for a transformation that preserves symmetry and doesn't create this problem with citric acid, as well as checking for non normality or by using a general distribution for Mahalanobis distances that doesn't depend on normality of the variables.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

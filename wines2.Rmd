@@ -1,0 +1,2057 @@
+---
+title: "An study on cluster and factor analysis on wines"
+author: "Arturo Prieto Tirado"
+date: "27/01/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE)
+```
+
+
+
+```{r, warning=FALSE}
+#import libraries
+library(readr)
+library(dplyr)
+library(lavaan)#covariance plot
+library(ggplot2)
+library(tictoc)
+library(corrplot)
+library(cluster)
+#tic()
+
+#Import datasets
+
+set.seed(100)
+
+setwd("C:/Users/arpri/OneDrive/Escritorio/libros/master/Segundo Semicuatrimestre/Análisis multivariante/")
+
+vinostintos=read_delim("winequality-red.csv", ";", escape_double = FALSE, trim_ws = TRUE)
+
+vinosblancos=read_delim("winequality-white.csv", ";", escape_double = FALSE, trim_ws = TRUE)
+
+#merge them and create categorical variable 
+
+vinostintos$type="red"
+vinosblancos$type="white"
+
+vinostotal=rbind(vinostintos, vinosblancos)
+
+
+#qualitative auxiliary variable
+
+Y=vinostotal[,13]
+
+
+#anyNA(vinostotal) #no NA
+
+#min(vinostotal$quality)
+```
+
+
+```{r}
+#preprocess
+#change to logarithms for the future
+i=1
+
+#citric acid gives some problems log(0)= inf
+
+
+vinostotal[vinostotal$'citric acid'==0, "citric acid"]=vinostotal[vinostotal$'citric acid'==0, "citric acid"]+0.005
+
+vinosblancos[vinosblancos$'citric acid'==0, "citric acid"]=vinosblancos[vinosblancos$'citric acid'==0, "citric acid"]+0.005
+
+vinostintos[vinostintos$'citric acid'==0, "citric acid"]=vinostintos[vinostintos$'citric acid'==0, "citric acid"]+0.005
+
+#probably, this would create some outlier in citrid acid, it won't be infinity, but anyway a very big number
+
+
+for(names in colnames(vinostotal)[1:(length(colnames(vinostotal))-2)]){
+  vinostotal[[names]]=log(vinostotal[[names]])
+  names(vinostotal)[i]=paste("log(",names, ")")
+  vinosblancos[[names]]=log(vinosblancos[[names]])
+  names(vinosblancos)[i]=paste("log(",names, ")")
+  vinostintos[[names]]=log(vinostintos[[names]])
+  names(vinostintos)[i]=paste("log(",names, ")")
+  i=i+1
+}
+
+
+
+
+
+
+```
+
+
+The PCA show that there might be two groups and indeed as seen before, they coincide with the type of wine. The question is, are there only two groups or are there more? Can we classify the points in the dataset in another way? Several methods will be analyzed to try to find the best classification.
+
+```{r}
+# Substitute the quantitatives dataset by X
+
+
+X <- vinostotal[,1:12]
+n <- nrow(X)
+p <- ncol(X)
+
+# Define colors for plots
+
+color_1 <- "deepskyblue2"
+color_2 <- "seagreen2"
+color_3 <- "orange2"
+color_4 <- "darkorchid4"
+color_5 <- "firebrick2"
+color_6 <- "black"
+color_7 <- "coral4"
+
+
+```
+
+
+```{r}
+
+
+Z <- prcomp(X,scale=TRUE)$x[,1:2]
+
+library(corpcor)
+#S_shrink <- cov.shrink(X)
+#S <- S_shrink[1:p,1:p]
+library(RSpectra)
+#eig_S <- eigs_sym(S,2)
+#X_centred <- scale(X,scale=FALSE)
+#eigen_vectors_S <- eig_S$vectors[,1:2]
+#Z <- X_centred %*% eigen_vectors_S
+plot(Z,pch=19,col=color_1,main="First two PCs for wines",xlab="First PC",ylab="Second PC")
+
+
+
+# This plot suggests that there might be more than one group
+```
+
+
+## Partitional clustering
+
+Let's start with partitional clustering techniques which start from an initial cluster definition and proceed by exchanging elements between clusters until an appropriate cluster structure is found. However, we need to know how many clusters $k$ we would like to build, how many are the optimal? Let's compare with several criteria:
+
+```{r ksumsquares}
+
+# Compare several values of $K$ with different methods
+
+
+# Select K with WSS
+
+library("factoextra")
+fviz_nbclust(X,kmeans,method="wss",k.max=10)
+
+# convexity changes in 4 but it is not very clear where it stabilizes
+```
+
+One can expect the total within sum of squares to stabilize from the optimal number of clusters and in advance since adding more clusters of the optimal ones doesn't explain much more. However, there is not a clear stabilization point in this plot, so another methods must be used like silhouette or the gap statistic.
+
+```{r ksilhouette}
+
+# Select K with Silhouette
+
+fviz_nbclust(X,kmeans,method="silhouette",k.max=10)
+
+# The plot suggests K=4 although K=7 is an alternative
+
+
+
+```
+
+The idea is that the silhouette of a point ranges from -1 to 1 and indicates if its wrongly or correctly assigned to its own cluster. From the average silhouette plot one can extract the goodness of the classification, the higher the silhouette, the better. We can see that the optimal number of clusters is 4 and from the gap statistic (following plot), an optimal number of 6 is found. However, we need to take into account that the method for the gap statistic is to find the maximum value of the gap statistic or its first local maximum, which usually leads to very large values of $k$. We can see that 6 is just on the limit of being a local maximum since its difference to 7 is not very big. Therefore, to avoid this uncertainty, the chosen value will be $k=4$ from the average silhouette analysis.
+
+```{r, eval=FALSE}
+# Select K with the gap statistic, takes 10 minutes
+
+
+library(doParallel)
+c6=makePSOCKcluster(7)
+registerDoParallel(c6)
+gap_stat <- clusGap(X,FUN=kmeans,K.max=10,B=100)
+stopCluster(c6)
+fviz_gap_stat(gap_stat,linecolor="steelblue",maxSE=list(method="firstmax",SE.factor = 1))
+#save(gap_stat, file="gapstatistic.Rdata")
+```
+
+```{r kgapstatistic}
+load("gapstatistic.Rdata")
+fviz_gap_stat(gap_stat,linecolor="steelblue",maxSE=list(method="firstmax",SE.factor = 1))
+
+# The plot suggests K=6
+
+
+```
+
+
+Now that the optimal value is known, it's time to perform the clustering. The first algorithm  used is kmeans which minimizes the within sum of squares for a given $k$. The two PC with k means clustering are shown in the following figure:
+
+
+```{r kmeans4}
+# Run K-means with K=4, the optimal number of clusters we just saw
+
+
+k=4
+
+kmeans_X <- kmeans(X,centers=k,iter.max=1000,nstart=100)
+
+# The cluster solution
+
+#kmeans_X$cluster
+#this is a vector containing the assigned group for each of the 6500 wines
+#see the distribution in a barplot
+#barplot(table(kmeans_X$cluster), ylab="Number of points", xlab="Cluster")
+```
+
+
+```{r plotkmeans}
+# Make a plot of the first two PCs split in these 4 clusters
+
+colors_kmeans_X <- c(color_1,color_2,color_3,color_4,color_5, color_6, color_7)[kmeans_X$cluster]
+plot(Z,pch=19,col=colors_kmeans_X,main="First two PCs for wines with kmeans cluster",xlab="First PC",ylab="Second PC")
+
+
+
+```
+
+It can be seen that there is great overlap between the groups. Analyzing the silhouette one gets an average silhouette of 0.26, which is positive, indicating a good assignment but not incredibly good.
+
+
+```{r}
+# Silhouette plot for the solution with K=4
+
+# Compute the silhouette
+
+sil_kmeans_X <- silhouette(kmeans_X$cluster,dist(X,"euclidean"))
+plot(sil_kmeans_X, col=color_1, border=NA)
+#dev.copy(png, "myplot.png")
+#dev.off()
+```
+
+
+The next algorithm used is PAM, which changes the mean vector used in kmeans, sensitive to outliers, to the medoid (observation whose average distance to all the observations in the cluster is minimal). This algorithm is also known as k-medoids. The clusters are shown in the following plot:
+
+
+
+```{r PAM}
+
+# Run PAM with Manhattan distance and K=4
+
+
+pam_X <- pam(X,k=k,metric="manhattan",stand=FALSE)
+
+# Make a plot of the first two PCs with the solution
+
+colors_pam_X <- c(color_1,color_2,color_3,color_4,color_5, color_6, color_7)[pam_X$cluster]
+plot(Z,pch=19,col=colors_pam_X,main="First two PCs for wines with PAM Manhattan clusters",xlab="First PC",ylab="Second PC")
+```
+
+
+The solution is different that the one obtained with kmeans and there is still big overlap between the groups. The average silhouette obtained is 0.2, which is worse than in kmeans.
+
+```{r PAMsilhoutte}
+# Have a look at the silhouette
+
+sil_pam_X <- silhouette(pam_X$cluster,dist(X,method="manhattan"))
+plot(sil_pam_X,col=color_1, border=NA)
+
+# The solution is close to K-means but it migth be sligthly better
+```
+
+The next algorithm used is CLARA, which is a version of k-medoids extended for large applications. The groups obtained are shown in the following figure:
+
+```{r CLARA}
+
+# Run CLARA with Manhattan distance and K=4 
+
+
+clara_X <- clara(X,k=k,metric="manhattan",stand=FALSE)
+
+# Make a plot of the first two PCs with the solution
+
+colors_clara_X <- c(color_1,color_2,color_3,color_4,color_5, color_6, color_7)[clara_X$cluster]
+plot(Z,pch=19,col=colors_clara_X,main="First two PCs for wines with CLARA Manhattan cluster",xlab="First PC",ylab="Second PC")
+```
+
+The solution is again different as the ones previously obtained with an average silhouette of 0.19, the worst one so far.
+
+
+```{r CLARAsilh}
+# Have a look at the silhouette
+
+sil_clara_X <- silhouette(clara_X$cluster,dist(X,method="manhattan"))
+plot(sil_clara_X,col=color_1, border=NA)
+
+# The solution is not similar to the one given by PAM but the computational cost is less
+```
+
+
+## Hierarchical clustering
+
+The idea with hierarchical clustering is to start either with only one cluster and split it or to start with $k=n$ total observations clusters and merge them (agglomerative algorithms), so that we don't need to know $k$ in advance. In order to analyze $k$, one looks at distances, in our case Manhattan distance, in what is called a dendogram. However, due to the large number of observations present in the dataset, judging accurately from the dendogram is difficult so we will just use $k=4$ as it was obtained in previous analysis.
+```{r}
+
+#number of clusters
+
+#k=2 using 2 gives similar results to the wine type
+
+#use k=4 as before
+
+k=4
+```
+
+
+
+
+```{r}
+#CALCULATE PCA as in previous step (no need for shrinkage covariance natrix)
+
+#Z <- prcomp(X,scale=TRUE)$x[,1:2]
+
+library(corpcor)
+#S_shrink <- cov.shrink(X)
+#S <- S_shrink[1:p,1:p]
+library(RSpectra)
+#eig_S <- eigs_sym(S,2)
+#X_centred <- scale(X,scale=FALSE)
+#eigen_vectors_S <- eig_S$vectors[,1:2]
+#Z <- X_centred %*% eigen_vectors_S
+
+
+
+```
+
+
+```{r}
+
+# Agglomerative hierarchical clustering analysis for the NCI60 data set
+
+
+# Compute the Manhattan distance matrix between the observations in the data matrix
+
+library(cluster)
+man_dist_X <- daisy(X,metric="manhattan",stand=FALSE) #this is used in all future methods
+
+
+```
+
+
+
+We will start with agglomerative algorithms and the first method used is single linkage, with the solution shown in the following figure:
+```{r simple linkage}
+# Single linkage
+
+single_X <- hclust(man_dist_X,method="single")
+
+# Plot dendogram of the solution for k=4 as in K-means
+
+plot(single_X,main="Single linkage",cex=0.8)
+rect.hclust(single_X,k=k,border=color_1)
+
+# See the assignment
+
+cl_single_X <- cutree(single_X,k)
+#cl_single_X
+#table(cl_single_X)
+
+# Make a plot of the first two PCs with the 4 clusters
+
+colors_single_X <- c(color_1,color_2, color_3, color_4, color_5, color_6, color_7)[cl_single_X]
+plot(Z,pch=19,col=colors_single_X,main="First two PCs for wines with single linkage clustering",xlab="First PC",ylab="Second PC")
+
+# Have a look at the silhouette
+
+sil_single_X <- silhouette(cl_single_X,man_dist_X)
+plot(sil_single_X,col=color_1, border=NA)
+
+# This solution is awful
+
+```
+
+We can see that we get an average silhouette of 0.27, which is good in comparison with previous ones, but the distribution of clusters is awful, with a very big group and three singletons which can be seen in the PC plot and in the dendogram, with the size of the groups represented by the blue box (only one very big blue box and three singletons represented by vertical lines that are not seen). As can be seen in the dendogram, the single linkage distance calculation firstly separates individual points, so increasing k would probably only add more singletons.
+
+A more sophisticated way of dealing with distances is complete linkage:
+
+```{r complete linkage}
+
+# Complete linkage
+
+complete_X <- hclust(man_dist_X,method="complete")
+
+# Plot dendogram of the solution for k=7 as in K-means
+
+plot(complete_X,main="Complete linkage",cex=0.8)
+rect.hclust(complete_X,k=k,border=color_1)
+
+# See the assignment
+
+cl_complete_X <- cutree(complete_X,k)
+#cl_complete_X
+#barplot(table(cl_complete_X), xlab="cluster", ylab="number of points")
+
+# Make a plot of the first two PCs with the five clusters
+
+colors_complete_X <- c(color_1,color_2, color_3, color_4, color_5, color_6, color_7)[cl_complete_X]
+plot(Z,pch=19,col=colors_complete_X,main="First two PCs for wines with complete linkage clustering",xlab="First PC",ylab="Second PC")
+
+# Have a look at the silhouette
+
+sil_complete_X <- silhouette(cl_complete_X,man_dist_X)
+plot(sil_complete_X,col=color_1, border=NA)
+
+# This solution is better but not as good as the ones from partition methods
+
+
+```
+
+It is possible to see that there are now 4 groups with no singletons even if it can be seen in the dendogram that two of the groups are very small. The solution has an average silhouette of 0.29, which is close to the partitional clustering solutions.
+
+Another approach is using average linkage which yields the following solution:
+
+```{r average linkage}
+
+# Average linkage
+
+average_X <- hclust(man_dist_X,method="average")
+
+# Plot dendogram of the solution for k=5 as in K-means
+
+plot(average_X,main="Average linkage",cex=0.8)
+rect.hclust(average_X,k=k,border=color_1)
+
+# See the assignment
+
+cl_average_X <- cutree(average_X,k)
+#cl_average_X
+#barplot(table(cl_average_X), xlab="cluster", ylab="number of points")
+
+# Make a plot of the first two PCs with the five clusters
+
+colors_average_X <- c(color_1,color_2, color_3, color_4, color_5, color_6, color_7)[cl_average_X]
+plot(Z,pch=19,col=colors_average_X,main="First two PCs for wines with average linkage clustering",xlab="First PC",ylab="Second PC")
+
+# Have a look at the silhouette
+
+sil_average_X <- silhouette(cl_average_X,man_dist_X)
+plot(sil_average_X,col=color_1, border=NA)
+
+# This solution is not good either
+
+
+
+```
+
+Again we find a solution with singletons and a very big group so, even if it has a high silhouette (0.32), it is a bad solution.
+
+Finally, the last agglomerative algorithm is Ward linkage:
+
+```{r ward linkage}
+# Ward linkage
+
+ward_X <- hclust(man_dist_X,method="ward")
+
+# Plot dendogram of the solution for k=5 as in K-means
+
+plot(ward_X,main="Ward linkage",cex=0.8)
+rect.hclust(ward_X,k=k,border=color_1)
+
+# See the assignment
+
+cl_ward_X <- cutree(ward_X,k)
+#cl_ward_X
+#barplot(table(cl_ward_X), xlab="cluster", ylab="number of points")
+
+# Make a plot of the first two PCs with the five clusters
+
+colors_ward_X <- c(color_1,color_2, color_3, color_4, color_5, color_6, color_7)[cl_ward_X]
+plot(Z,pch=19,col=colors_ward_X,main="First two PCs for wines with ward linkage clustering",xlab="First PC",ylab="Second PC")
+
+# Have a look at the silhouette
+
+sil_ward_X <- silhouette(cl_ward_X,man_dist_X)
+plot(sil_ward_X,col=color_1, border=NA)
+
+# 
+
+
+```
+
+This solution is probably the best one among the agglomerative hierarchical clustering methods, with 4 more or less balanced groups with no singletons and an average silhouette of 0.21.
+
+
+Now we will try with a divisive algorithm, that is, we start from only one cluster containing all the observations and split to reduce the distance (Manhattan). The whole splitting process (analogously to the merging process for the previous algorithms) can be seen in the dendogram and the solution retained was that of $k=4$.
+
+```{r, eval=FALSE}
+# Divisive hierarchical clustering analysis for the NCI60 data set
+
+
+diana_X <- diana(X,metric="manhattan")
+
+save(diana_X, file="DIANA.Rdata")
+```
+
+![](dendogramdiana.png)
+
+```{r diana}
+
+load("DIANA.Rdata")
+
+# Plot dendogram of the solution
+
+
+
+# Hit two times Return to see the dendogram
+# The heights here are the diameters of the clusters before splitting
+# Take k=4
+#plot(diana_X,main="DIANA")
+#rect.hclust(diana_X,k=k,border=color_1)
+
+
+
+
+# See the assignment
+
+cl_diana_X <- cutree(diana_X,k) #esto es un vector con el numero de grupo asignado
+#cl_diana_X
+#barplot(table(cl_diana_X), xlab="cluster", ylab="number of points")
+
+# Make a plot of the first two PCs with the five clusters
+
+colors_diana_X <- c(color_1,color_2, color_3, color_4, color_5, color_6, color_7)[cl_diana_X] #asignamos colores conforme al numero de grupo
+
+plot(Z,pch=19,col=colors_diana_X,main="First two PCs for wines with DIANA Manhattan clustering",xlab="First PC",ylab="Second PC")
+
+# Have a look at the silhouette
+
+sil_diana_X <- silhouette(cl_diana_X,man_dist_X)
+plot(sil_diana_X,col=color_1, border=NA)
+
+# This solution is probably the best one among the hierarchical clustering methods
+
+
+
+```
+
+This procedure yields a realistic solution (with no singletons) with an average silhouette of 0.23.
+
+
+
+## Model based clustering
+
+Finally, the last clustering approach would be model based clustering. This approach is not based on distances but on probabilities. It assumes that the observations are generated by different distributions with certain probability so that we can identify the population it belongs to using the Bayes Theorem.
+
+There are several models choosing from (spherical, diagonal and ellipsoidal) which are restrictions on the covariance matrix and on equal or unequal volume (largest eigenvalues for each $k$ identical or not), equal or unequal shape (matrix of eigenvalues for each $k$ identical or not) and equal or unequal orientation (matrix of eigenvectors for each $k$ identical or not). In total, there are 14 configurations. Their Bayesian Information Criteria (BIC) is analyzed for all of them in order to find the best one and the optimal $k$. The lowest the BIC, the better. The following plot shows -BIC of all models, so that the model on top is the best:
+
+```{r}
+
+
+# Model-based clustering
+
+
+library(mclust)
+
+# Have a look at the different configurations
+
+#?mclustModelNames
+```
+
+
+```{r}
+
+# Note that M-Clust will not estimate configurations for which the covariance matrices
+# are singular because n<p. Then, alternatively, to illustrate the behavior of M-Clust 
+# we run it on the first two PCs
+
+# Compute the value of the BIC for all the possible configurations
+
+BIC_X <- mclustBIC(Z,G=1:7)
+#BIC_X
+
+# Note that some models cannot be compute even with the restrictions imposed by M-Clust
+
+# Have a look at the results
+
+plot(BIC_X)
+
+# Note that the function returns -BIC, so we have to select the maximum value of this quantity
+```
+
+```{r, eval=FALSE}
+
+# Run Mclust for the optimal solution
+
+Mclust_X <- Mclust(Z,x=BIC_X)
+
+save(Mclust_X, file="Mclust_X.Rdata")
+```
+
+```{r}
+load("Mclust_X.Rdata")
+#summary(Mclust_X)
+
+
+```
+
+```{r, eval=FALSE}
+# The vector of clusters can be found here
+
+Mclust_X$classification
+
+# The estimated mixing probabilities can be found here
+
+Mclust_X$parameters$pro
+
+# The estimated sample mean vectors can be found here
+
+Mclust_X$parameters$means
+
+# The estimated sample covariance matrices can be found here
+
+Mclust_X$parameters$variance
+
+
+```
+
+The best model from Mclust is VVE (ellipsoidal, equal orientation) model with $k=4$ components and the solution it yields is the following:
+
+```{r}
+# Plot the groups
+
+plot(Mclust_X,what="classification")
+
+
+```
+
+With the following densities:
+
+```{r}
+# Plot the estimated densities
+
+plot(Mclust_X,what="density")
+```
+
+
+The results obtained are realistic since they contain no singletons but one should carefully analyze the uncertainty of the classification or, in other words, remember that we are working with probabilities. So, ideally, we would like to classify an observation as 100% sure (probability) of belonging to a certain cluster. However, reality is that we might have multiple significant probabilities for each cluster for a given observation, as can be seen in the following plot:
+
+```{r}
+
+# Plot the estimated probabilities of the observations for each cluster
+
+colors_Mclust_X <- c(color_1,color_2,color_3,color_4)[Mclust_X$classification]
+par(mfrow=c(2,2))
+plot(1:n,Mclust_X$z[,1],pch=19,col=colors_Mclust_X,main="Cluster 1",xlab="wine",ylab="Probability of cluster 1")
+plot(1:n,Mclust_X$z[,2],pch=19,col=colors_Mclust_X,main="Cluster 2",xlab="wine",ylab="Probability of cluster 2")
+plot(1:n,Mclust_X$z[,3],pch=19,col=colors_Mclust_X,main="Cluster 3",xlab="wine",ylab="Probability of cluster 3")
+plot(1:n,Mclust_X$z[,4],pch=19,col=colors_Mclust_X,main="Cluster 4",xlab="wine",ylab="Probability of cluster 4")
+
+#groups are not really well defined since many points have great probability of being in several clusters. Ideally, in cluster 1 the blue points would have big probability and the others almost 0, while we see up to 0.5. Same happens in the others.
+```
+
+
+It can be seen that while most of the points of cluster 1 (blue) belong to cluster 1 without much doubt because they have low probability of being in other clusters, this doesn't happen for the other three of them, with probabilities up to almost 50% of being in other group. Keep in mind that 50% is the limit since the observation is assigned to a certain cluster taking the associated maximum probability, so an observation classified to group 4 can have as much as 50% probability of being in another group.
+
+In general, the uncertainty of the points is shown in the following plot, where we see overlapping.
+
+```{r}
+
+# Plot the points with uncertainty
+
+par(mfrow=c(1,1))
+plot(Mclust_X,what="uncertainty")
+
+
+```
+
+Finally, let's compare its silhouette to that of the other models:
+
+```{r}
+#compare its silhouette
+
+
+sil_modelbased_X <- silhouette(Mclust_X$classification,man_dist_X)
+plot(sil_modelbased_X,col=color_1, border=NA)
+
+
+```
+
+The average silhouette is 0.12 so other models performed better. In particular, the best model was complete linkage with an average silhouette of 0.29. In particular, in that model there were two very small groups while the other two were almost identical to the PC distinction between red and white wines. We should therefore expect some hidden variable that lead to dividing the white wines into three groups and the leave the red ones alone. This will be analysed in the factor analysis.
+
+
+```{r}
+
+colors_complete_X <- c(color_1,color_2, color_3, color_4, color_5, color_6, color_7)[cl_complete_X]
+
+plot(Z,pch=19,col=colors_complete_X,main="First two PCs for wines with complete linkage clustering (best)",xlab="First PC",ylab="Second PC")
+
+
+```
+
+# Factor analysis in the clusters obtained
+
+As said, the best clustering was achieved with complete linkage clustering. Now, factor analysis will be performed on each individual cluster to see their different traits.
+
+```{r}
+
+#cl_complete_X
+#save(cl_complete_X, file="cl_complete_X.Rdata")
+load("cl_complete_X.Rdata")
+#get the clusters
+cluster1=X[cl_complete_X==1,]
+cluster2=X[cl_complete_X==2,]
+cluster3=X[cl_complete_X==3,]
+cluster4=X[cl_complete_X==4,]
+```
+
+## Principal Component Factor Analysis
+
+### First cluster (blue)
+
+Let's first analyze the explained percentage of variance of each eigenvalue:
+```{r}
+
+# Principal Component Factor Analysis
+
+
+# Obtain the PCs of the univariate standardized variables
+
+Y <- scale(cluster1)
+Y_pcs <- prcomp(Y)
+
+# Screeplot with all the eigenvalues
+
+library(factoextra)
+fviz_eig(Y_pcs,ncp=p,addlabels=T,barfill=color_1,barcolor=color_4)
+#get_eigenvalue(Y_pcs)
+
+```
+
+The plot suggests four factors. We can apply the varimax rotation on them for interpretability and finally get the following results:
+
+```{r}
+# Let focus on the four PCs
+
+r <- 4
+
+
+# Estimate the matrix M and use the varimax rotation for interpretability
+
+M_pcfa <- Y_pcs$rotation[,1:r] %*% diag(Y_pcs$sdev[1:r])
+#M_pcfa
+M_pcfa <- varimax(M_pcfa)
+M_pcfa <- loadings(M_pcfa)[1:p,1:r]
+#M_pcfa
+M_pcfa1=M_pcfa
+```
+
+
+
+```{r}
+
+
+plot(1:p,M_pcfa[,1],pch=19,col=color_1,xlab="",ylab="Weights",main="Weights for the first factor", ylim=c(-1,1))
+abline(h=0)
+text(1:p,M_pcfa[,1],labels=colnames(X),pos=1,col=color_5,cex=0.75)
+```
+
+The first factor appears to be an index of the acidity (both in fixed acidity and in pH) and alcohol percentage of the wine, the alcoholic and acid strength of the wine (but not taste).
+
+
+```{r}
+# The second factor appears to be an index of professional conscientiousness 
+
+plot(1:p,M_pcfa[,2],pch=19,col=color_1,xlab="",ylab="Weights",main="Weights for the second factor", ylim=c(-1,1))
+abline(h=0)
+text(1:p,M_pcfa[,2],labels=colnames(X),pos=1,col=color_5,cex=0.75)
+```
+
+The second factor simply applies to sulfur dioxide present in the wine.
+
+```{r}
+# The third factor appears to be an index of roughness 
+
+plot(1:p,M_pcfa[,3],pch=19,col=color_1,xlab="",ylab="Weights",main="Weights for the third factor", ylim=c(-1,1))
+abline(h=0)
+text(1:p,M_pcfa[,3],labels=colnames(X),pos=1,col=color_5,cex=0.75)
+```
+
+The third factor is a measure of sulphates and citric acid of the wine as well as its quality. General measure of the strength of its flavour.
+
+```{r}
+# The fourth factor appears to be an index of restlessness 
+
+plot(1:p,M_pcfa[,4],pch=19,col=color_1,xlab="",ylab="Weights",main="Weights for the fourth factor", ylim=c(-1,1))
+abline(h=0)
+text(1:p,M_pcfa[,4],labels=colnames(X),pos=1,col=color_5,cex=0.75)
+
+
+```
+
+Finally, the fourth factor is a measure of the volatile acidity and residual sugar, a measure of the sweetness of the wine.
+
+In order to analyze the goodness of the factor model, let's see its communalities and uniquenesses.
+
+```{r}
+
+# Estimate the covariance matrix of the errors
+
+Sigma_nu_pcfa <- diag(diag(cov(Y) - M_pcfa %*% t(M_pcfa)))
+
+
+# Communalities and uniquenesses
+
+comm_pcfa <- diag(M_pcfa %*% t(M_pcfa))
+comm_pcfa1=comm_pcfa
+par(mfrow=c(1,2))
+plot(1:p,sort(comm_pcfa,decreasing=TRUE),pch=20,col=color_1,xlim=c(0,34),xlab="Variables",ylab="Communalities",
+     main="Communalities with PCFA")
+text(1:p,sort(comm_pcfa,decreasing=TRUE),labels=names(sort(comm_pcfa,decreasing=TRUE)),pos=4,col=color_5,cex=0.75)
+
+uniq_pcfa <- 1 - comm_pcfa
+#uniq_pcfa
+names(uniq_pcfa) <- names(comm_pcfa)
+#uniq_pcfa
+plot(1:p,sort(uniq_pcfa,decreasing=TRUE),pch=20,col=color_1,xlim=c(0,34),xlab="Variables",ylab="Uniquenesses",
+     main="Uniquenesses with PCFA")
+text(1:p,sort(uniq_pcfa,decreasing=TRUE),labels=names(sort(uniq_pcfa,decreasing=TRUE)),pos=4,col=color_5,cex=0.75)
+```
+
+It can be seen that the factor model better explains total sulfur dioxide, fixed acidity and density while the worst explained variables are volatile acidity, residual sugar and citric acid.
+
+The four factors obtained are uncorrelated and account for alcohol strength, sulfur dioxide, sweetness of the wine and taste strength of the wine. The representation of all the points into these 4 factors can be seen with factor scores:
+```{r}
+# The variables better explained by the factors are Outgoing, Quiet and Tense
+# The variables worst explained by the factors are Lax, Perseverant and Approving
+
+
+# Estimate the factor scores
+
+F_pcfa <- Y %*% solve(Sigma_nu_pcfa) %*% M_pcfa %*% solve(t(M_pcfa) %*% solve(Sigma_nu_pcfa) %*% M_pcfa)
+colnames(F_pcfa) <- c("Factor 1","Factor 2","Factor 3","Factor 4")
+F_pcfa1=F_pcfa
+# See that the factors are uncorrelated
+
+pairs(F_pcfa,pch=19,col=color_1)
+#corrplot(cor(F_pcfa),order="hclust")
+```
+
+Finally, one can see in the residuals that there are very minor correlations that the factor model leaves unexplained, being the one with alcohol and fixed acidity the only important one.
+
+```{r}
+
+# Estimate the residuals
+
+Nu_pcfa1 <- Y - F_pcfa %*% t(M_pcfa)
+corrplot(cor(Nu_pcfa1),order="hclust")
+
+# The residuals show some very minor correlations that the factor model is not able to explain
+# but this is something expected
+
+
+```
+
+
+
+### Second cluster (green)
+
+Let's first analyze the explained percentage of variance of each eigenvalue:
+
+```{r}
+
+
+# Principal Component Factor Analysis
+
+
+
+# Obtain the PCs of the univariate standardized variables
+
+Y <- scale(cluster2)
+Y_pcs <- prcomp(Y)
+
+# Screeplot with all the eigenvalues
+
+library(factoextra)
+fviz_eig(Y_pcs,ncp=p,addlabels=T,barfill=color_1,barcolor=color_4)
+#get_eigenvalue(Y_pcs)
+
+```
+
+It suggests two factors for the model. Estimating the M matrix and after varimax rotation one gets the following variable importance for the two factors:
+
+```{r}
+# Let focus on the first two PCs
+
+r <- 2
+
+
+# Estimate the matrix M and use the varimax rotation for interpretability
+
+M_pcfa <- Y_pcs$rotation[,1:r] %*% diag(Y_pcs$sdev[1:r])
+#M_pcfa
+M_pcfa <- varimax(M_pcfa)
+M_pcfa <- loadings(M_pcfa)[1:p,1:r]
+M_pcfa2=M_pcfa
+
+```
+
+
+
+```{r}
+
+plot(1:p,M_pcfa[,1],pch=19,col=color_1,xlab="",ylab="Weights",main="Weights for the first factor", ylim=c(-1,1))
+abline(h=0)
+text(1:p,M_pcfa[,1],labels=colnames(X),pos=1,col=color_5,cex=0.75)
+```
+
+The first factor is greatly influenced by the density, chlorides and fixed acidity. Chlorides are related to the saltyness of the wine so in general this factor is telling us the amount of other substances present in the wine (that's the importance of density) with saltyness and acidity being the main affected ones.
+
+
+```{r}
+
+plot(1:p,M_pcfa[,2],pch=19,col=color_1,xlab="",ylab="Weights",main="Weights for the second factor", ylim=c(-1,1))
+abline(h=0)
+text(1:p,M_pcfa[,2],labels=colnames(X),pos=1,col=color_5,cex=0.75)
+
+
+```
+
+The second factor, on the other hand, is affected by alcohol and quality. Since higher alcohol percentage is associated to older wines, which are usually also associated to higher quality, this means that this factor is an index of the aging of the wine.
+
+
+In order to analyze the goodness of the factor model, let's see its communalities and uniquenesses.
+
+
+
+```{r}
+
+# Estimate the covariance matrix of the errors
+
+Sigma_nu_pcfa <- diag(diag(cov(Y) - M_pcfa %*% t(M_pcfa)))
+
+
+# Communalities and uniquenesses
+
+comm_pcfa <- diag(M_pcfa %*% t(M_pcfa))
+comm_pcfa2=comm_pcfa
+par(mfrow=c(1,2))
+plot(1:p,sort(comm_pcfa,decreasing=TRUE),pch=20,col=color_1,xlim=c(0,34),xlab="Variables",ylab="Communalities",
+     main="Communalities with PCFA")
+text(1:p,sort(comm_pcfa,decreasing=TRUE),labels=names(sort(comm_pcfa,decreasing=TRUE)),pos=4,col=color_5,cex=0.75)
+
+uniq_pcfa <- 1 - comm_pcfa
+#uniq_pcfa
+names(uniq_pcfa) <- names(comm_pcfa)
+#uniq_pcfa
+plot(1:p,sort(uniq_pcfa,decreasing=TRUE),pch=20,col=color_1,xlim=c(0,34),xlab="Variables",ylab="Uniquenesses",
+     main="Uniquenesses with PCFA")
+text(1:p,sort(uniq_pcfa,decreasing=TRUE),labels=names(sort(uniq_pcfa,decreasing=TRUE)),pos=4,col=color_5,cex=0.75)
+
+# The variables better explained by the factors are Outgoing, Quiet and Tense
+# The variables worst explained by the factors are Lax, Perseverant and Approving
+
+```
+
+It can be seen that the factor model better explains density, chlorides and alcohol while the worst explained variables are citric acid, free sulfur dioxide and residual sugar.
+
+
+The two factors obtained are uncorrelated and account for saltyness/acidity of the wine and aging. The representation of all the points into these 2 factors can be seen with factor scores:
+
+```{r}
+# Estimate the factor scores
+
+F_pcfa <- Y %*% solve(Sigma_nu_pcfa) %*% M_pcfa %*% solve(t(M_pcfa) %*% solve(Sigma_nu_pcfa) %*% M_pcfa)
+colnames(F_pcfa) <- c("Factor 1","Factor 2")
+F_pcfa2=F_pcfa
+# See that the factors are uncorrelated
+
+pairs(F_pcfa,pch=19,col=color_1)
+#corrplot(cor(F_pcfa),order="hclust")
+
+```
+
+
+
+Finally, one can see in the residuals that there are very minor correlations that the factor model leaves unexplained, explaining most of the other ones.
+```{r}
+# Estimate the residuals
+
+Nu_pcfa2 <- Y - F_pcfa %*% t(M_pcfa)
+corrplot(cor(Nu_pcfa2),order="hclust")
+
+# The residuals show some very minor correlations that the factor model is not able to explain
+# but this is something expected
+
+
+```
+
+### Third cluster (orange)
+
+Let's first analyze the explained percentage of variance of each eigenvalue:
+```{r}
+
+
+# Obtain the PCs of the univariate standardized variables
+
+Y <- scale(cluster3)
+Y_pcs <- prcomp(Y)
+
+# Screeplot with all the eigenvalues
+
+library(factoextra)
+fviz_eig(Y_pcs,ncp=p,addlabels=T,barfill=color_1,barcolor=color_4)
+#get_eigenvalue(Y_pcs)
+
+```
+
+It suggests five factors for the model. Estimating the M matrix and after varimax rotation one gets the following variable importance for the five factors:
+
+```{r}
+# Let focus on the first five PCs
+
+r <- 5
+
+
+# Estimate the matrix M and use the varimax rotation for interpretability
+
+M_pcfa <- Y_pcs$rotation[,1:r] %*% diag(Y_pcs$sdev[1:r])
+#M_pcfa
+M_pcfa <- varimax(M_pcfa)
+#M_pcfa
+M_pcfa <- loadings(M_pcfa)[1:p,1:r]
+M_pcfa3=M_pcfa
+
+```
+
+
+
+```{r}
+# The first factor appears to be an index of extraversion 
+
+plot(1:p,M_pcfa[,1],pch=19,col=color_1,xlab="",ylab="Weights",main="Weights for the first factor", ylim=c(-1,1))
+abline(h=0)
+text(1:p,M_pcfa[,1],labels=colnames(X),pos=1,col=color_5,cex=0.75)
+```
+
+The first factor is clearly an index of the acidity.
+
+```{r}
+# The second factor appears to be an index of professional conscientiousness 
+
+plot(1:p,M_pcfa[,2],pch=19,col=color_1,xlab="",ylab="Weights",main="Weights for the second factor", ylim=c(-1,1))
+abline(h=0)
+text(1:p,M_pcfa[,2],labels=colnames(X),pos=1,col=color_5,cex=0.75)
+```
+
+The second factor is influenced by chlorides, sulphates and density, so it's an index of the saltyness of the wine.
+
+```{r}
+
+plot(1:p,M_pcfa[,3],pch=19,col=color_1,xlab="",ylab="Weights",main="Weights for the third factor", ylim=c(-1,1))
+abline(h=0)
+text(1:p,M_pcfa[,3],labels=colnames(X),pos=1,col=color_5,cex=0.75)
+```
+
+This factor is influenced by alcohol and quality, so again it looks like an index of the aging of the wine.
+
+
+```{r}
+# The fourth factor appears to be an index of restlessness 
+
+plot(1:p,M_pcfa[,4],pch=19,col=color_1,xlab="",ylab="Weights",main="Weights for the fourth factor", ylim=c(-1,1))
+abline(h=0)
+text(1:p,M_pcfa[,4],labels=colnames(X),pos=1,col=color_5,cex=0.75)
+```
+
+This factor is simply an index of the sulfur dioxide.
+
+
+```{r}
+# The fifth factor appears to be an index of friendliness
+
+plot(1:p,M_pcfa[,5],pch=19,col=color_1,xlab="",ylab="Weights",main="Weights for the fifth factor", ylim=c(-1,1))
+abline(h=0)
+text(1:p,M_pcfa[,5],labels=colnames(X),pos=1,col=color_5,cex=0.75)
+
+```
+
+Finally, the last factor is an index of the sweetness of the wine.
+
+In order to analyze the goodness of the factor model, let's see its communalities and uniquenesses.
+
+
+```{r}
+
+# Estimate the covariance matrix of the errors
+
+Sigma_nu_pcfa <- diag(diag(cov(Y) - M_pcfa %*% t(M_pcfa)))
+
+
+# Communalities and uniquenesses
+
+comm_pcfa <- diag(M_pcfa %*% t(M_pcfa))
+comm_pcfa3=comm_pcfa
+par(mfrow=c(1,2))
+plot(1:p,sort(comm_pcfa,decreasing=TRUE),pch=20,col=color_1,xlim=c(0,34),xlab="Variables",ylab="Communalities",
+     main="Communalities with PCFA")
+text(1:p,sort(comm_pcfa,decreasing=TRUE),labels=names(sort(comm_pcfa,decreasing=TRUE)),pos=4,col=color_5,cex=0.75)
+
+uniq_pcfa <- 1 - comm_pcfa
+#uniq_pcfa
+names(uniq_pcfa) <- names(comm_pcfa)
+#uniq_pcfa
+plot(1:p,sort(uniq_pcfa,decreasing=TRUE),pch=20,col=color_1,xlim=c(0,34),xlab="Variables",ylab="Uniquenesses",
+     main="Uniquenesses with PCFA")
+text(1:p,sort(uniq_pcfa,decreasing=TRUE),labels=names(sort(uniq_pcfa,decreasing=TRUE)),pos=4,col=color_5,cex=0.75)
+
+# The variables better explained by the factors are Outgoing, Quiet and Tense
+# The variables worst explained by the factors are Lax, Perseverant and Approving
+
+```
+
+The variables best explained by the model are total and free sulphur dioxide as well as density while the worst explained are pH, quality and chlorides. Anyway, the model has high communalities in general.
+
+
+The five factors obtained are uncorrelated and account for acidity, saltyness of the wine, the sulfur dioxide, the aging and the sweetness. The representation of all the points into these 5 factors can be seen with factor scores:
+```{r}
+# Estimate the factor scores
+
+F_pcfa <- Y %*% solve(Sigma_nu_pcfa) %*% M_pcfa %*% solve(t(M_pcfa) %*% solve(Sigma_nu_pcfa) %*% M_pcfa)
+colnames(F_pcfa) <- c("Factor 1","Factor 2","Factor 3","Factor 4","Factor 5")
+F_pcfa3=F_pcfa
+pairs(F_pcfa,pch=19,col=color_1)
+
+```
+
+
+Finally, one can see in the residuals that there are very minor correlations that the factor model leaves unexplained, being the one with free and total sulfur dioxide as well as residual sugar and fixed acidity.
+
+```{r}
+
+# Estimate the residuals
+
+Nu_pcfa3 <- Y - F_pcfa %*% t(M_pcfa)
+corrplot(cor(Nu_pcfa3),order="hclust")
+
+# The residuals show some very minor correlations that the factor model is not able to explain
+# but this is something expected
+
+
+```
+
+
+
+### Fourth cluster (violet)
+
+Let's first analyze the explained percentage of variance of each eigenvalue:
+
+```{r}
+
+
+# Principal Component Factor Analysis
+
+
+
+# Obtain the PCs of the univariate standardized variables
+
+Y <- scale(cluster4)
+Y_pcs <- prcomp(Y)
+
+# Screeplot with all the eigenvalues
+
+library(factoextra)
+fviz_eig(Y_pcs,ncp=p,addlabels=T,barfill=color_1,barcolor=color_4)
+#get_eigenvalue(Y_pcs)
+
+```
+
+It might suggest only one factor, but two will be taken because one yields very bad results.  Estimating the M matrix and after varimax rotation one gets the following variable importance for the factors:
+
+
+```{r}
+# Let focus on the first five PCs
+
+r <- 2
+
+
+# Estimate the matrix M and use the varimax rotation for interpretability
+
+M_pcfa <- Y_pcs$rotation[,1:r] %*% diag(Y_pcs$sdev[1:r])
+#M_pcfa
+M_pcfa <- varimax(M_pcfa)
+#M_pcfa
+M_pcfa <- loadings(M_pcfa)[1:p,1:r]
+
+M_pcfa4=M_pcfa
+
+```
+
+
+
+```{r}
+
+plot(1:p,M_pcfa[,1],pch=19,col=color_1,xlab="",ylab="Weights",main="Weights for the first factor", ylim=c(-1,1))
+abline(h=0)
+text(1:p,M_pcfa[,1],labels=colnames(X),pos=1,col=color_5,cex=0.75)
+
+```
+
+
+The factor is influenced by alcohol and quality (among others), so it's a measure of the aging of the wine. 
+
+```{r}
+
+plot(1:p,M_pcfa[,2],pch=19,col=color_1,xlab="",ylab="Weights",main="Weights for the second factor", ylim=c(-1,1))
+abline(h=0)
+text(1:p,M_pcfa[,2],labels=colnames(X),pos=1,col=color_5,cex=0.75)
+
+```
+
+The second factor is a measure of the acidity.
+
+
+
+In order to analyze the goodness of the factor model, let's see its communalities and uniquenesses.
+
+```{r}
+
+# Estimate the covariance matrix of the errors
+
+Sigma_nu_pcfa <- diag(diag(cov(Y) - M_pcfa %*% t(M_pcfa)))
+
+
+# Communalities and uniquenesses
+
+comm_pcfa <- diag(M_pcfa %*% t(M_pcfa))
+par(mfrow=c(1,2))
+comm_pcfa4=comm_pcfa
+plot(1:p,sort(comm_pcfa,decreasing=TRUE),pch=20,col=color_1,xlim=c(0,34),xlab="Variables",ylab="Communalities",
+     main="Communalities with PCFA")
+text(1:p,sort(comm_pcfa,decreasing=TRUE),labels=names(sort(comm_pcfa,decreasing=TRUE)),pos=4,col=color_5,cex=0.75)
+
+uniq_pcfa <- 1 - comm_pcfa
+#uniq_pcfa
+names(uniq_pcfa) <- names(comm_pcfa)
+#uniq_pcfa
+plot(1:p,sort(uniq_pcfa,decreasing=TRUE),pch=20,col=color_1,xlim=c(0,34),xlab="Variables",ylab="Uniquenesses",
+     main="Uniquenesses with PCFA")
+text(1:p,sort(uniq_pcfa,decreasing=TRUE),labels=names(sort(uniq_pcfa,decreasing=TRUE)),pos=4,col=color_5,cex=0.75)
+
+# The variables better explained by the factors are Outgoing, Quiet and Tense
+# The variables worst explained by the factors are Lax, Perseverant and Approving
+```
+
+The variables best explained by the model are density, alcohol and fixed acidity and the worse, citric acid, sulphates and volatile acidity.
+
+
+The two factors obtained are uncorrelated and account for aging and acidity of the wine. The representation of all the points into these 2 factors can be seen with factor scores:
+
+
+```{r}
+
+# Estimate the factor scores
+
+F_pcfa <- Y %*% solve(Sigma_nu_pcfa) %*% M_pcfa %*% solve(t(M_pcfa) %*% solve(Sigma_nu_pcfa) %*% M_pcfa)
+colnames(F_pcfa) <- c("Factor 1", "Factor 2")
+pairs(F_pcfa,pch=19,col=color_1)
+F_pcfa4=F_pcfa
+```
+
+
+
+Finally, one can see in the residuals that there are very minor correlations that the factor model leaves unexplained, explaining most of the other ones.
+
+```{r}
+
+# Estimate the residuals
+
+Nu_pcfa4 <- Y - F_pcfa %*% t(M_pcfa)
+corrplot(cor(Nu_pcfa4),order="hclust")
+
+# The residuals show some very minor correlations that the factor model is not able to explain
+# but this is something expected
+
+
+```
+
+
+It is also surprising to see how this last factor model had only two factors but explained almost everything as can be seen in its residual plots, while other factor models for the other clusters with more factors got worse results.
+
+In conclusion, we got that the main traits for each cluster are:
+
+- Cluster 1: Alcohol strength, sulfur dioxide, sweetness and taste strength
+- Cluster 2: Saltyness/acidity and aging
+- Cluster 3: Acidity, saltyness, sulfur dioxide, aging and sweetness
+- Cluster 4: Aging and acidity
+
+
+As it can be seen, they have many in common, being cluster 1 the most different one with two unique factors: Alcohol and taste strength. Now, let's compare this results with Principal Factor Analysis
+
+
+
+## Principal Factor Analysis on the clusters
+
+Now we will analyze the factor model using principal factor analysis with the same amount of eigenvalues obtained previously for each eigenvalue.
+
+### First cluster
+
+```{r init}
+# Principal factor analysis
+
+# Obtain the sample correlation matrix of X, that is the sample covariance matrix of Y
+r=4
+Y <- scale(cluster1)
+
+R_X <- cor(cluster1)
+
+
+# Obtain R_X - Sigma_nu_pcfa, its eigenvectors and eigenvalues
+
+MM <- R_X - Sigma_nu_pcfa
+MM_eig <- eigen(MM)
+MM_values <- MM_eig$values
+MM_vectors <- MM_eig$vectors
+
+
+# Estimate the matrix M and use the varimax rotation for interpretability
+
+M_pfa <- MM_eig$vectors[,1:r] %*% diag(MM_eig$values[1:r])^(1/2)
+#M_pfa
+M_pfa <- varimax(M_pfa)
+M_pfa <- loadings(M_pfa)[1:p,1:r]
+#M_pfa
+```
+
+
+Let's compare the differences between PCFA and PFA:
+
+
+```{r PCFAandPFA}
+# Compare PCFA and PFA estimates of M
+
+par(mfrow=c(2,2))
+plot(M_pcfa1[,1],M_pfa[,1],pch=19,col=color_1,main="First factors with PCFA and PFA",xlab="PCFA",ylab="PFA")
+plot(M_pcfa1[,2],M_pfa[,2],pch=19,col=color_1,main="Second factors with PCFA and PFA",xlab="PCFA",ylab="PFA")
+plot(M_pcfa1[,3],M_pfa[,3],pch=19,col=color_1,main="Third factors with PCFA and PFA",xlab="PCFA",ylab="PFA")
+plot(M_pcfa1[,4],M_pfa[,4],pch=19,col=color_1,main="Fourth factors with PCFA and PFA",xlab="PCFA",ylab="PFA")
+
+```
+
+It can be seen that for cluster 1, all the factors are different except the second one, that seems more or less linear.
+
+
+On the other hand, in terms of noise, both approaches are very similar:
+
+```{r}
+# The two estimates of the loading matrix are very similar so we do not plot the estimated weights again
+
+
+# Estimate the covariance matrix of the errors
+
+Sigma_nu_pfa <- diag(diag(R_X - M_pfa %*% t(M_pfa)))
+
+# Compare with the estimate with the PCFA method
+
+par(mfrow=c(1,1))
+plot(diag(Sigma_nu_pcfa),diag(Sigma_nu_pfa),pch=19,col=color_1,main="Noise variances with PCFA and PFA",
+     xlab="PCFA",ylab="PFA")
+```
+
+The main difference between PCFA and PFA is that in PFA the communalities are smaller, which means that the PFA factor model explains worse. However, this change is not very big and the main ideas are kept. One could also obtain the factor scores in a similar way as done before and, if we look at the correlations it can be seen that the main ideas are still there, just changed the factor order.
+
+```{r}
+
+# Estimate the factor scores
+
+F_pfa <- Y %*% solve(Sigma_nu_pfa) %*% M_pfa %*% solve(t(M_pfa) %*% solve(Sigma_nu_pfa) %*% M_pfa)
+colnames(F_pfa) <- c("Factor 1","Factor 2","Factor 3","Factor 4")
+
+corrplot(cor(F_pfa,F_pcfa1))
+
+```
+
+Same applies for the residuals, where we can see that the PFA model is a bit worse with more unexplained variance.
+
+```{r}
+# There are some small differences
+
+
+# Communalities and uniquenesses
+
+comm_pfa <- diag(M_pfa %*% t(M_pfa))
+names(comm_pfa) <- colnames(Y)
+
+#sort(comm_pfa,decreasing=TRUE)
+#sort(comm_pcfa1,decreasing=TRUE)
+
+#comm_pfa
+#print("hi")
+#comm_pcfa1
+
+uniq_pfa <- diag(Sigma_nu_pfa)
+#uniq_pfa
+names(uniq_pfa) <- names(comm_pfa)
+#uniq_pfa
+#sort(uniq_pfa,decreasing=TRUE)
+#sort(uniq_pfa,decreasing=TRUE)
+
+
+```
+
+```{r factorscores}
+
+# Thus, they are very close to each other
+
+
+# Estimate the residuals
+
+Nu_pfa <- Y - F_pfa %*% t(M_pfa)
+corrplot(cor(Nu_pfa),order="hclust")
+```
+
+It can be seen that the PFA model presents more correlation between the residuals, so it's a little bit worse, as commented when looking at the communalities. But, anyway, it is similar to the PCFA results, as can be seen in the following plot:
+
+```{r}
+# As before, the residuals show some minor correlation that the model is not able to explain
+
+# Obtain the correlation matrix between the PCFA and PFA estimates
+
+corrplot(cor(Nu_pcfa1,Nu_pfa))
+
+# Thus, they are very close to each other
+```
+
+
+### Second cluster
+
+```{r init2}
+# Principal factor analysis
+
+# Obtain the sample correlation matrix of X, that is the sample covariance matrix of Y
+r=2
+Y <- scale(cluster2)
+
+R_X <- cor(cluster2)
+
+
+# Obtain R_X - Sigma_nu_pcfa, its eigenvectors and eigenvalues
+
+MM <- R_X - Sigma_nu_pcfa
+MM_eig <- eigen(MM)
+MM_values <- MM_eig$values
+MM_vectors <- MM_eig$vectors
+
+
+# Estimate the matrix M and use the varimax rotation for interpretability
+
+M_pfa <- MM_eig$vectors[,1:r] %*% diag(MM_eig$values[1:r])^(1/2)
+#M_pfa
+M_pfa <- varimax(M_pfa)
+M_pfa <- loadings(M_pfa)[1:p,1:r]
+#M_pfa
+```
+
+
+Let's compare the differences between PCFA and PFA:
+
+
+```{r PCFAandPFA2}
+# Compare PCFA and PFA estimates of M
+
+par(mfrow=c(1,2))
+plot(M_pcfa2[,1],M_pfa[,1],pch=19,col=color_1,main="First factors with PCFA and PFA",xlab="PCFA",ylab="PFA")
+plot(M_pcfa2[,2],M_pfa[,2],pch=19,col=color_1,main="Second factors with PCFA and PFA",xlab="PCFA",ylab="PFA")
+
+
+```
+
+It can be seen that for cluster 2, all the factors are linear with their correspondent PCFA versions, so they keep their physical meaning.
+
+
+
+On the other hand, in terms of noise, both approaches are very similar:
+
+```{r}
+# The two estimates of the loading matrix are very similar so we do not plot the estimated weights again
+
+
+# Estimate the covariance matrix of the errors
+
+Sigma_nu_pfa <- diag(diag(R_X - M_pfa %*% t(M_pfa)))
+
+# Compare with the estimate with the PCFA method
+
+par(mfrow=c(1,1))
+plot(diag(Sigma_nu_pcfa),diag(Sigma_nu_pfa),pch=19,col=color_1,main="Noise variances with PCFA and PFA",
+     xlab="PCFA",ylab="PFA")
+```
+
+
+The main difference between PCFA and PFA is that in PFA the communalities are smaller, which means that the PFA factor model explains worse. However, this change is not very big and the main ideas are kept. One could also obtain the factor scores in a similar way as done before and, if we look at the correlations it can be seen that the main ideas are still there.
+
+
+```{r}
+# There are some small differences
+
+
+# Communalities and uniquenesses
+
+comm_pfa <- diag(M_pfa %*% t(M_pfa))
+names(comm_pfa) <- colnames(Y)
+
+#sort(comm_pfa,decreasing=TRUE)
+#sort(comm_pcfa2,decreasing=TRUE)
+
+#comm_pfa
+#print("hi")
+#comm_pcfa2
+
+uniq_pfa <- diag(Sigma_nu_pfa)
+#uniq_pfa
+names(uniq_pfa) <- names(comm_pfa)
+#uniq_pfa
+#sort(uniq_pfa,decreasing=TRUE)
+#sort(uniq_pfa,decreasing=TRUE)
+
+
+```
+
+```{r}
+
+F_pfa <- Y %*% solve(Sigma_nu_pfa) %*% M_pfa %*% solve(t(M_pfa) %*% solve(Sigma_nu_pfa) %*% M_pfa)
+colnames(F_pfa) <- c("Factor 1","Factor 2")
+
+corrplot(cor(F_pfa,F_pcfa2))
+
+```
+
+Same applies for the residuals, where we can see that the PFA model is a bit worse with more unexplained variance.
+
+```{r factorscores2}
+
+
+# Estimate the residuals
+
+Nu_pfa <- Y - F_pfa %*% t(M_pfa)
+corrplot(cor(Nu_pfa),order="hclust")
+```
+
+It can be seen that the PFA model presents more correlation between the residuals, so it's a little bit worse, as commented when looking at the communalities. But, anyway, it is similar to the PCFA results, as can be seen in the following plot:
+
+```{r}
+# As before, the residuals show some minor correlation that the model is not able to explain
+
+# Obtain the correlation matrix between the PCFA and PFA estimates
+
+corrplot(cor(Nu_pcfa2,Nu_pfa))
+
+# Thus, they are very close to each other
+```
+
+
+
+### Third cluster
+
+```{r init3}
+# Principal factor analysis
+
+# Obtain the sample correlation matrix of X, that is the sample covariance matrix of Y
+r=5
+Y <- scale(cluster3)
+
+R_X <- cor(cluster3)
+
+
+# Obtain R_X - Sigma_nu_pcfa, its eigenvectors and eigenvalues
+
+MM <- R_X - Sigma_nu_pcfa
+MM_eig <- eigen(MM)
+MM_values <- MM_eig$values
+MM_vectors <- MM_eig$vectors
+
+
+# Estimate the matrix M and use the varimax rotation for interpretability
+
+M_pfa <- MM_eig$vectors[,1:r] %*% diag(MM_eig$values[1:r])^(1/2)
+#M_pfa
+M_pfa <- varimax(M_pfa)
+M_pfa <- loadings(M_pfa)[1:p,1:r]
+#M_pfa
+```
+
+
+Let's compare the differences between PCFA and PFA:
+
+
+```{r PCFAandPFA3}
+# Compare PCFA and PFA estimates of M
+
+par(mfrow=c(3,2))
+plot(M_pcfa3[,1],M_pfa[,1],pch=19,col=color_1,main="First factors with PCFA and PFA",xlab="PCFA",ylab="PFA")
+plot(M_pcfa3[,2],M_pfa[,2],pch=19,col=color_1,main="Second factors with PCFA and PFA",xlab="PCFA",ylab="PFA")
+plot(M_pcfa3[,3],M_pfa[,3],pch=19,col=color_1,main="Third factors with PCFA and PFA",xlab="PCFA",ylab="PFA")
+plot(M_pcfa3[,4],M_pfa[,4],pch=19,col=color_1,main="Fourth factors with PCFA and PFA",xlab="PCFA",ylab="PFA")
+plot(M_pcfa3[,5],M_pfa[,5],pch=19,col=color_1,main="Fifth factors with PCFA and PFA",xlab="PCFA",ylab="PFA")
+
+```
+
+It can be seen that for cluster 3, all the factors are linear, so they keep their meaning, except the second and third one.
+
+On the other hand, in terms of noise, both approaches are very similar:
+
+```{r}
+# The two estimates of the loading matrix are very similar so we do not plot the estimated weights again
+
+
+# Estimate the covariance matrix of the errors
+
+Sigma_nu_pfa <- diag(diag(R_X - M_pfa %*% t(M_pfa)))
+
+# Compare with the estimate with the PCFA method
+
+par(mfrow=c(1,1))
+plot(diag(Sigma_nu_pcfa),diag(Sigma_nu_pfa),pch=19,col=color_1,main="Noise variances with PCFA and PFA",
+     xlab="PCFA",ylab="PFA")
+```
+
+
+The main difference between PCFA and PFA is that in PFA the communalities are smaller, which means that the PFA factor model explains worse. However, this change is not very big and the main ideas are kept. One could also obtain the factor scores in a similar way as done before and, if we look at the correlations it can be seen that the main ideas are still there, just changed the factor order for the second and third factor.
+
+
+```{r}
+# There are some small differences
+
+
+# Communalities and uniquenesses
+
+comm_pfa <- diag(M_pfa %*% t(M_pfa))
+names(comm_pfa) <- colnames(Y)
+
+#sort(comm_pfa,decreasing=TRUE)
+#sort(comm_pcfa3,decreasing=TRUE)
+
+#comm_pfa
+#print("hi")
+#comm_pcfa3
+
+uniq_pfa <- diag(Sigma_nu_pfa)
+#uniq_pfa
+names(uniq_pfa) <- names(comm_pfa)
+#uniq_pfa
+#sort(uniq_pfa,decreasing=TRUE)
+#sort(uniq_pfa,decreasing=TRUE)
+
+
+```
+
+```{r}
+# Estimate the factor scores
+
+F_pfa <- Y %*% solve(Sigma_nu_pfa) %*% M_pfa %*% solve(t(M_pfa) %*% solve(Sigma_nu_pfa) %*% M_pfa)
+colnames(F_pfa) <- c("Factor 1","Factor 2","Factor 3","Factor 4", "Factor 5")
+corrplot(cor(F_pfa,F_pcfa3))
+
+```
+
+Same applies for the residuals, where we can see that the PFA model is a bit worse with more unexplained variance.
+
+```{r factorscores3}
+
+# Thus, they are very close to each other
+
+
+# Estimate the residuals
+
+Nu_pfa <- Y - F_pfa %*% t(M_pfa)
+corrplot(cor(Nu_pfa),order="hclust")
+```
+
+It can be seen that the PFA model presents more correlation between the residuals, so it's a little bit worse, as commented when looking at the communalities. But, anyway, it is similar to the PCFA results, as can be seen in the following plot:
+
+```{r}
+# As before, the residuals show some minor correlation that the model is not able to explain
+
+# Obtain the correlation matrix between the PCFA and PFA estimates
+
+corrplot(cor(Nu_pcfa3,Nu_pfa))
+
+# Thus, they are very close to each other
+```
+
+
+
+### Fourth cluster
+
+```{r init4}
+# Principal factor analysis
+
+# Obtain the sample correlation matrix of X, that is the sample covariance matrix of Y
+r=2
+Y <- scale(cluster4)
+
+R_X <- cor(cluster4)
+
+
+# Obtain R_X - Sigma_nu_pcfa, its eigenvectors and eigenvalues
+
+MM <- R_X - Sigma_nu_pcfa
+MM_eig <- eigen(MM)
+MM_values <- MM_eig$values
+MM_vectors <- MM_eig$vectors
+
+
+# Estimate the matrix M and use the varimax rotation for interpretability
+
+M_pfa <- MM_eig$vectors[,1:r] %*% diag(MM_eig$values[1:r])^(1/2)
+#M_pfa
+M_pfa <- varimax(M_pfa)
+M_pfa <- loadings(M_pfa)[1:p,1:r]
+#M_pfa
+```
+
+
+Let's compare the differences between PCFA and PFA:
+
+
+```{r PCFAandPFA4}
+# Compare PCFA and PFA estimates of M
+
+par(mfrow=c(1,2))
+plot(M_pcfa4[,1],M_pfa[,1],pch=19,col=color_1,main="First factors with PCFA and PFA",xlab="PCFA",ylab="PFA")
+plot(M_pcfa4[,2],M_pfa[,2],pch=19,col=color_1,main="Second factors with PCFA and PFA",xlab="PCFA",ylab="PFA")
+
+
+```
+
+It can be seen that for cluster 4, the two factors have a linear relationship between PFA and PCFA, so they share the same meaning. 
+
+
+
+On the other hand, in terms of noise, both approaches are very similar:
+
+```{r}
+# The two estimates of the loading matrix are very similar so we do not plot the estimated weights again
+
+
+# Estimate the covariance matrix of the errors
+
+Sigma_nu_pfa <- diag(diag(R_X - M_pfa %*% t(M_pfa)))
+
+# Compare with the estimate with the PCFA method
+
+par(mfrow=c(1,1))
+plot(diag(Sigma_nu_pcfa),diag(Sigma_nu_pfa),pch=19,col=color_1,main="Noise variances with PCFA and PFA",
+     xlab="PCFA",ylab="PFA")
+```
+
+
+The main difference between PCFA and PFA is that in PFA the communalities are smaller, which means that the PFA factor model explains worse. However, this change is not very big and the main ideas are kept. One could also obtain the factor scores in a similar way as done before and, if we look at the correlations it can be seen that the main ideas are still there.
+
+
+```{r}
+# There are some small differences
+
+
+# Communalities and uniquenesses
+
+comm_pfa <- diag(M_pfa %*% t(M_pfa))
+names(comm_pfa) <- colnames(Y)
+
+#sort(comm_pfa,decreasing=TRUE)
+#sort(comm_pcfa4,decreasing=TRUE)
+
+#comm_pfa
+#print("hi")
+#comm_pcfa4
+
+uniq_pfa <- diag(Sigma_nu_pfa)
+#uniq_pfa
+names(uniq_pfa) <- names(comm_pfa)
+#uniq_pfa
+#sort(uniq_pfa,decreasing=TRUE)
+#sort(uniq_pfa,decreasing=TRUE)
+
+
+```
+
+
+```{r}
+
+# Estimate the factor scores
+
+F_pfa <- Y %*% solve(Sigma_nu_pfa) %*% M_pfa %*% solve(t(M_pfa) %*% solve(Sigma_nu_pfa) %*% M_pfa)
+colnames(F_pfa) <- c("Factor 1","Factor 2")
+
+corrplot(cor(F_pfa,F_pcfa4))
+
+```
+
+Let's now look at the residuals of the PFA model, where we can see that the PFA model is a bit worse with more unexplained variance.:
+
+```{r factorscores4}
+
+
+# Thus, they are very close to each other
+
+
+# Estimate the residuals
+
+Nu_pfa <- Y - F_pfa %*% t(M_pfa)
+corrplot(cor(Nu_pfa),order="hclust")
+```
+
+It can be seen that the PFA model presents more correlation between the residuals, so it's a little bit worse, as commented when looking at the communalities. But, anyway, it is similar to the PCFA results, as can be seen in the following plot:
+
+```{r}
+# As before, the residuals show some minor correlation that the model is not able to explain
+
+# Obtain the correlation matrix between the PCFA and PFA estimates
+
+corrplot(cor(Nu_pcfa4,Nu_pfa))
+
+# Thus, they are very close to each other
+```
+
+
+
+
+## Maximum Likelihood Estimation
+
+Finally, there is another method that is Maximum Likelihood Estimation that makes use of the distribution of the data, relying heavily on gaussianity. It was already discussed in the previous part of the project that the data, even with the logarithm transformation, are not gaussian so they do not fulfill the requirements to apply this technique. An attempt was made with no real improvement over PFCA and PFA so we just mention it here for completeness and brevity. 
+
+# Discussion and conclusions
+
+In conclusion, several clustering configurations have been studied, being the optimal one complete linkage with 4 clusters. Then, factor analysis has been implemented on each of the 4 clusters to see if they had different traits. This analysis was approached with two different methods, Principal Factor Analysis and Principal Component Factor analysis, yielding a compatible joint solution between both of them:
+
+
+
+- Cluster 1 (blue): Alcohol strength, sulfur dioxide, sweetness and taste strength
+- Cluster 2 (green): Saltyness/acidity and aging
+- Cluster 3 (orange): Acidity, saltyness, sulfur dioxide, aging and sweetness
+- Cluster 4 (violet): Aging and acidity
+
+```{r}
+
+colors_complete_X <- c(color_1,color_2, color_3, color_4, color_5, color_6, color_7)[cl_complete_X]
+
+plot(Z,pch=19,col=colors_complete_X,main="First two PCs for wines with complete linkage clustering (best)",xlab="First PC",ylab="Second PC")
+
+```
+
+If we remember that high values of the first PC were associated with red wines and lower values, with white wines, one can see then that the full red wine group has its own cluster (violet), while the white wines group have more diversity, with three different categories. The blue section would correspond to strong white wines while the main difference between clusters 2 and 3 would be their age. Since age weight for cluster 2 is positive, cluster 2 corresponds to old wines and cluster 3 to young wines. It can also be seen that there is way more variability in cluster 3 than in cluster 2 with five factors needed instead of two. This indicates that there is more variability in the young white wines market.
+
+Separation between groups could be useful, for example, if we wanted to sell a new wine. We would need more information of the wines that are competitors rather than just "red" or "white" wines. In order to find which wines are our direct competitors, we could use this clustering and the factor analysis information to find the group our wine belongs to depending on its characteristics. Furthermore, it can be used to identify potential niches or opportunities where there are less competitors in the market (i.e. a cluster with few observations on it).
+
+
+# Extra: Task Topics 5 and 6
+
+## Task topic 5: Multidimensional Scaling
+
+Choose at least eight entities, such as clothing brands, politicians, drinks, etc. With them, define with your own opinions a matrix of dissimilarities with which to perform multidimensional scaling. Then, perform the analysis and obtain conclusions from the results obtained.
+
+The idea is to get 8 entities and relate them intuitively. Then, find the hidden variables that explain those similarities. I have chosen 8 drinks: wine, juice, water, beer, vodka, gin, tea, coffee. In order to build the similarities matrix, I've thought in their water composition and alcohol percentage. Since most of them, except the vodka and gin, are mostly water, they have high similarities with water and between them. However, juice is similar to wine because it's sweet but not to beer because beer is not sweet and also has other compounds. Beer has a stronger taste, more similar to tea or coffee. Then, voda and gin are very alcoholic and very different from the rest but close between each other. With this in mind, the final matrix is the following:
+
+```{r ejercicioparte5}
+#matrix of similarities:
+
+
+simmatrix=matrix(c(1,0.85,0.7,0.4,0.1,0.1,0.6,0.6,
+                   0.85,1,0.95,0.2,0.1,0.1,0.9,0.9,
+                   0.7,0.95,1,0.7,0.3,0.3,0.95,0.95,
+                   0.4,0.2,0.7,1,0.1,0.1,0.7,0.7,
+                   0.1,0.1,0.3,0.1,1,0.9,0.1,0.1,
+                   0.1,0.1,0.3,0.1,0.9,1,0.1,0.1,
+                   0.6,0.9,0.95,0.7,0.1,0.1,1,0.9,
+                   0.6,0.9,0.95,0.7,0.1,0.1,0.9,1), nrow=8, byrow=TRUE)
+
+rownames(simmatrix)=c("wine", "juice", "water", "beer", "vodka", "gin", "tea", "coffee")
+colnames(simmatrix)=c("wine", "juice", "water", "beer", "vodka", "gin", "tea", "coffee")
+simmatrix
+```
+
+```{r}
+# Define colors for plots
+
+color_1 <- "deepskyblue2"
+color_2 <- "seagreen2"
+color_3 <- "orange2"
+color_4 <- "darkorchid4"
+color_5 <- "firebrick2"
+
+# Transform similarities to dissimilarities
+
+
+# Just simply take the reverse
+
+library(smacof)
+
+diss.drinks <- sim2diss(simmatrix,method="reverse",to.dist=TRUE)
+#diss.drinks
+#max(diss.drinks)
+#min(diss.drinks)
+
+
+
+# MDS with the function cmdscale
+
+# Obtain the principal coordinates for k=n-1=7
+
+mds.drinks <- cmdscale(diss.drinks,k=7,eig=TRUE)
+#mds.drinks
+
+# As it can be seen, only 2 eigenvalues are negative (considering that e-17 is just 0)
+
+# Obtain the precision measure for positive eigenvalues (first 6 eigenvalues)
+
+mds.m <- cumsum(mds.drinks$eig[1:6]/sum(abs(mds.drinks$eig)))
+#mds.m
+
+# Plot eigenvalues and the precision measure for positive eigenvalues
+```
+
+
+Let's check how many eigenvalues we need:
+
+```{r, out.width="900px"}
+par(mfrow=c(1,2))
+plot(1:8,mds.drinks$eig,type="b",col=color_1,pch=20,xlab="Eigenvalue number",ylab="Eigenvalue",main="Eigenvalues")
+abline(h=0)
+plot(1:6,mds.m,type="b",col=color_1,pch=20,xlab="Eigenvalue number",ylab="Precision measure",main="Precision measure eigenvalues>0")
+
+# Therefore, the first two principal coordinates gives a very accurate explanation of the data set 
+```
+
+There are six positive eigenvalues and, as can be seen in the precision measure, only two of them are needed. Finally, let's see how the different drinks are classified:
+
+```{r}
+# Obtain the perceptual map (only two variables)
+
+par(mfrow=c(1,1))
+plot(mds.drinks$points[,1],mds.drinks$points[,2],xlab="Principal coordinate 1",ylab="Principal coordinate 2",pch=20,col=color_1, ylim=c(-0.6,0.6))
+text(mds.drinks$points[,1],mds.drinks$points[,2],labels=rownames(mds.drinks$points),col=color_4,pos=1)
+abline(v=0,h=0)
+
+# The first principal coordinate can be seen as a measure of crime severity
+# The second principal coordinate can be seen as a measure to distinguish robbery and auto theft from larceny
+
+
+```
+
+We can see how the first principal coordinate groups into spirits (very alcoholic) and non-spirits (low or no alcohol) while the second principal component differences into types of flavour: Sweet with juices and wines and very little of gin and vodka and bitter with beer but not that much of coffee and tea. Anyway, since in my classification of similarities I related coffee and tea very close to water, it makes sense that they are found to be close now since what this is really showing are the underlying variables that made up the dissimilarities matrix. Since I created the matrix, they indeed reproduce my thoughts when building it, which means that this procedure will be able to find the hidden variables in a real case scenario.
+
+
+## Task topic 6: Correspondence Analysis
+
+```{r}
+health <- matrix(c(243,789,167,18,6,220,809,164,35,6,147,658,181,41,8,90,469,236,50,16,53,414,306,106,30,44,267,284,98,20,20,136,157,66,17),nrow=7,ncol=5,byrow=TRUE)
+
+row.names(health)<-c("16-24","25-34","35-44","45-54","55-64","65-74","75+")
+
+colnames(health)<-c("VG","G","R","B","VB")
+
+health <- as.table(health)
+
+#health
+```
+
+Health is a contingency table corresponding to 6371 patients of a hospital with two variables. The first one is the age segment and the second one is the health status where VG, G, R, B, and VB mean "Very good", "Good", "Fair", "Bad" and "Very bad". It is requested to perform a correspondence analysis with this table and draw conclusions from the analysis.
+
+Let's start by looking at the health distribution in terms of age groups:
+
+```{r ejercicioparte6}
+
+
+
+# Contingency table for the data matrix
+
+
+# Contingency table
+
+N <- health
+#N
+r <- nrow(N)
+#r
+s <- ncol(N)
+#s
+
+# Contingency table with total absolute frequencies
+print("Contigency table")
+addmargins(N)
+
+# Joint barplot for marital status and education level
+
+plot(N,xlab="Age",ylab="Health level",col=color_1,main="Joint barplot")
+
+# Balloon plot in library ggpubr
+
+library(ggpubr)
+
+N_df <- as.data.frame(N)
+ggballoonplot(N_df,fill="value")+scale_fill_viridis_c(option="A")
+
+
+```
+
+Both plots suggest that the two variables are related in some way. However note that some classes are more represented than others, e.g., there are more young people than old people and, in general, younger people tend to have better health. Let's perform a chi squared test to see if this dependence of health on age is significative:
+
+```{r}
+
+# Correspondence table for the data matrix
+
+
+# Correspondence table
+
+P <- prop.table(health)
+#P
+
+# Correspondence table with total relative frequencies
+
+#addmargins(P)
+```
+
+
+```{r}
+
+# Chi-square test for the data matrix
+
+
+# Note that we have to apply the test to N, the contingency matrix
+
+N_ct <- chisq.test(N)
+N_ct
+
+# 
+```
+
+The p-value is very small (2.2e-16), meaning that there is a significative dependence between the age and the health level. Now, we would like to understand the association between these two qualitative variables: age group and health group. In order to do that, we perform correspondence analysis with the library "ca", getting the following results:
+
+```{r}
+
+# Correspondence Analysis for the data matrix
+
+
+
+# The whole process in the function ca of the library ca
+
+
+library(ca)
+
+ca_health <- ca(health)  
+#ca_health
+
+plot(ca_health)
+
+```
+
+The interpretation is as follows:
+
+- If row points (age groups) are close, then these rows have similar conditional distributions across columns (health status). 
+- If column points (health status) are close, then these columns have similar conditional distributions across rows (age groups).
+- If a row point is close to a column point, then that configuration suggests a particular deviation from independence.
+
+So, we can see that the 16-24 and 25-34 groups are very close, so they have a similar distribution across health status, which might make sense since those groups are groups of young people and the effects of age start to manifest later in life. The rest of age groups are far away from each other so they behave differently.
+
+On the other hand, all the health status are very far away from each other, which means that their distributions around age groups differ.
+
+Finally, we can see that the age group 35-44 and the health status "Good" are very close to each other, which suggest that they have a special dependency. Same could be said of "R" group and 55-64 age.
